@@ -12,7 +12,7 @@ device = torch.device('cpu')
 
 # load target lens
 lens = do.Lensgroup(device=device)
-lens.load_file(Path('./lenses/Thorlabs/ACL5040U.txt'))
+lens.load_file(Path('./lenses/ThorLabs/ACL5040U.txt'))
 print(lens.surfaces[0])
 
 # generate array of rays

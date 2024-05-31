@@ -9,7 +9,7 @@ sys.path.append("../")
 import diffoptics as do
 
 # initialize a lens
-device = torch.device('cuda')
+device = torch.device('cuda') if torch.cuda.is_available() else 'cpu'
 lens = do.Lensgroup(device=device)
 
 # load optics

@@ -3,10 +3,10 @@ import torch
 import matplotlib.pyplot as plt
 from pathlib import Path
 from matplotlib.image import imread, imsave
-import cv2
+import torchvision.transforms as transforms
 
 import imageio
-
+import os
 import sys
 sys.path.append("../")
 import diffoptics as do
@@ -24,7 +24,7 @@ device = do.init()
 lens = do.Lensgroup(device=device)
 
 # ==== Load lens file
-lens.load_file(Path('./lenses/Thorlabs/LA1131.txt'))
+lens.load_file(Path('./lenses/ThorLabs/LA1131.txt'))
 lens.d_sensor = torch.Tensor([56.0]).to(device) # [mm] sensor distance
 lens.plot_setup2D(with_sensor=True)
 R = lens.surfaces[0].r
@@ -96,7 +96,9 @@ def loss(I, I_mea):
 # read image
 img = imread('./data/20210304/ref2.tif') # for now we use grayscale
 img = img.astype(float)
-I_mea = cv2.resize(img, dsize=(N_total, N_total), interpolation=cv2.INTER_AREA)
+#I_mea = cv2.resize(img, dsize=(N_total, N_total), interpolation=cv2.INTER_AREA)
+I_mea = transforms.Resize((N_total, N_total), interpolation=transforms.InterpolationMode.NEAREST)(torch.Tensor(img).unsqueeze(0)).squeeze(0)
+I_mea = np.array(I_mea)
 I_mea = np.maximum(0.0, I_mea - np.median(I_mea))
 I_mea = N_total**2 * I_mea / I_mea.sum()
 I_mea = torch.Tensor(I_mea).to(device)

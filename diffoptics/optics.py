@@ -190,15 +190,16 @@ class Lensgroup(Endpoint):
         else:
             return torch.sqrt(torch.mean(torch.sum(ps**2, axis=-1))), ps/units
 
-    def spot_diagram(self, ps, show=True, xlims=None, ylims=None, color='b.', savepath=None):
+    def spot_diagram(self, ps, show=True, xlims=None, ylims=None, color='b.', savepath=None, normalize=True):
         """
         Plot spot diagram.
         """
         units = 1
         spot_rms = float(self.rms(ps, units)[0])
         ps = ps.cpu().detach().numpy()[...,:2]
-        ps_mean = np.mean(ps, axis=0) # centroid
-        ps = ps - ps_mean[None,...] # we now use normalized ps
+        if normalize:
+            ps_mean = np.mean(ps, axis=0) # centroid
+            ps = ps - ps_mean[None,...] # we now use normalized ps
         
         fig = plt.figure()
         ax = plt.axes()
@@ -367,9 +368,7 @@ class Lensgroup(Endpoint):
         """
         if ax is None and fig is None:
             fig, ax = plt.subplots(figsize=(8,6))
-        else:
-            show=False
-
+        #else: show=False
         # to world coordinate
         def plot(ax, z, x, color):
             p = self.to_world.transform_point(
@@ -449,14 +448,15 @@ class Lensgroup(Endpoint):
         return ax, fig
 
     # TODO: modify the tracing part to include oss
-    def plot_raytraces(self, oss, ax=None, fig=None, color='b-', show=True, p=None, valid_p=None):
+    def plot_raytraces(self, oss, ax=None, fig=None, color='b-', show=True, p=None, valid_p=None, with_sensor=True):
         """
         Plot all ray traces (oss).
         """
-        if ax is None and fig is None:
+        """ if ax is None and fig is None:
             ax, fig = self.plot_setup2D(show=False)
         else:
-            show=False
+            show=False """
+        ax, fig = self.plot_setup2D(ax=ax, fig=fig, show=False, with_sensor=with_sensor)
         for i, os in enumerate(oss):
             o = torch.Tensor(np.array(os)).to(self.device)
             x = o[...,0]
@@ -478,9 +478,8 @@ class Lensgroup(Endpoint):
                     z = np.append(z, p[i,2])
 
             ax.plot(z, x, color, linewidth=1.0)
-
         if show: plt.show()
-        else: plt.close()
+        #else: plt.close()
         return ax, fig
 
     def plot_setup2D_with_trace(self, views, wavelength, M=2, R=None, entrance_pupil=True):
@@ -565,7 +564,7 @@ class Lensgroup(Endpoint):
                 x, y = torch.meshgrid(
                     torch.linspace(-R, R, M, device=self.device),
                     torch.linspace(-R, R, M, device=self.device),
-                    indexing='ij'
+                    indexing='xy' # ij in original code
                 )
             elif sampling == 'radial':
                 r = torch.linspace(0, R, M, device=self.device)
@@ -771,7 +770,8 @@ class Lensgroup(Endpoint):
         """
         # trace rays
         ray_final, valid = self.trace(ray)
-
+        ray_final = self.to_object.transform_ray(ray_final)   # Seems to work better that way
+        
         # intersecting sensor plane
         t = (self.d_sensor - ray_final.o[...,2]) / ray_final.d[...,2]
         p = ray_final(t)
@@ -789,7 +789,7 @@ class Lensgroup(Endpoint):
         """
         # trace rays
         ray_final, valid, oss = self.trace_r(ray)
-
+        ray_final = self.to_object.transform_ray(ray_final)   # Seems to work better that way
         # intersecting sensor plane
         t = (self.d_sensor - ray_final.o[...,2]) / ray_final.d[...,2]
         p = ray_final(t)
@@ -950,7 +950,7 @@ class Lensgroup(Endpoint):
         valid = torch.ones(ray.o[..., 2].shape, device=self.device).bool()
         return valid, ray
     
-    def sample_ray_sensor(self, wavelength, offset=np.zeros(2)):
+    def sample_ray_sensor(self, wavelength, offset=np.zeros(2), aperture_reduction = 1):
         """
         Sample rays on the sensor plane.
         """
@@ -962,6 +962,7 @@ class Lensgroup(Endpoint):
         # sensor and aperture plane samplings
         sample2 = self._generate_sensor_samples()
         sample3 = self._generate_aperture_samples()
+        sample3 = sample3 / aperture_reduction
 
         # wavelength [nm]
         wav = wavelength * np.ones(N)

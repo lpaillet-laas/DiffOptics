@@ -9,7 +9,7 @@ sys.path.append("../")
 import diffoptics as do
 
 # initialize a lens
-device = torch.device('cuda')
+device = torch.device('cuda') if torch.cuda.is_available() else 'cpu'
 lens = do.Lensgroup(device=device)
 
 # load optics
@@ -55,6 +55,8 @@ def generate_surface_samples(M):
 
 def sample_ray(o_obj, M):
     p_aperture_2d = R * generate_surface_samples(M)
+    #plt.plot(p_aperture_2d[:,0], p_aperture_2d[:,1], 'o')
+    #plt.show()
     N = p_aperture_2d.shape[0]
     p_aperture = np.hstack((p_aperture_2d, np.zeros((N,1)))).reshape((N,3))
     o = np.ones(N)[:, None] * o_obj[None, :]
@@ -84,7 +86,7 @@ Nx = 2 * 8 + 1
 Ny = 2 * 6 + 1
 
 # sampling parameters
-M = 1001
+M = 5
 rep_count = 1
 
 def render_at_depth(z):

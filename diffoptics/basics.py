@@ -187,6 +187,7 @@ class Material(PrettyPrinter):
         self.MATERIAL_TABLE = { # [nD, Abbe number]
             "vacuum":     [1.,       np.inf],
             "air":        [1.000293, np.inf],
+            #"air":        [1., np.inf],
             "occluder":   [1.,       np.inf],
             "f2":         [1.620,    36.37],
             "f15":        [1.60570,  37.831],
@@ -229,7 +230,10 @@ class Material(PrettyPrinter):
             
             "flint":      [1.6200,   36.37],
             "pmma":       [1.491756, 58.00],
-            "polycarb":   [1.585470, 30.00]
+            "polycarb":   [1.585470, 30.00],
+
+            # Added from optical glass
+            "n-sk2":     [1.60738,  56.65],
         }
         self.A, self.B = self._lookup_material()
 
