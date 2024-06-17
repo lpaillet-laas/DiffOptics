@@ -483,9 +483,10 @@ def trace_psf_from_point_source(lenses=None, angles=[[0, 0]], x_pos=0, y_pos=0, 
     ray = sample_rays_pos(wavelength, angles, x_pos, y_pos, z_pos, lenses[0].device, d = d)
     
     pos = ray(torch.tensor([70.120]))
-    plt.scatter(pos[:,1], pos[:,0])
-    plt.axis('scaled')
-    plt.title('Entry of first lens')
+    if show_res:
+        plt.scatter(pos[:,1], pos[:,0])
+        plt.axis('scaled')
+        plt.title('Entry of first lens')
     #plt.show()
     
     oss = [0 for i in range(len(lenses))]
@@ -500,10 +501,11 @@ def trace_psf_from_point_source(lenses=None, angles=[[0, 0]], x_pos=0, y_pos=0, 
             ray.d = ray.d[valid, :]
 
     pos = ray(torch.tensor([np.cos(-9.088)*75.0]))
-    plt.figure()
-    plt.scatter(pos[:,1], pos[:,0])
-    plt.axis('scaled')
-    plt.title('Entry of second lens')
+    if show_res:
+        plt.figure()
+        plt.scatter(pos[:,1], pos[:,0])
+        plt.axis('scaled')
+        plt.title('Entry of second lens')
     
     #print("Mean angle out of first n-1 groups: ", torch.mean(torch.atan2(ray.d[:,0], ray.d[:, 2])*180/np.pi))
 
