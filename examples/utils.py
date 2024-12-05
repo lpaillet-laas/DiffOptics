@@ -289,7 +289,7 @@ def plot_setup_with_rays(lenses, oss):
 
 
 def propagate(lenses, texture = None, nb_rays=20, wavelengths = [656.2725, 587.5618, 486.1327], z0=0, offsets=None,
-                aperture_reduction = 1, save_dir = None):
+                aperture_reduction = 1, save_dir = None, plot = False):
     
     """
     Perform ray tracing simulation for propagating light through a lens system. Renders the texture on a screen
@@ -317,7 +317,8 @@ def propagate(lenses, texture = None, nb_rays=20, wavelengths = [656.2725, 587.5
         else:
             prepare_mts(lens, lens.pixel_size, lens.film_size, start_distance = offsets[-1], R=lens_mts_R, t=lens_mts_t)    
     
-    combined_plot_setup(lenses, with_sensor=True)
+    if plot:
+        combined_plot_setup(lenses, with_sensor=True)
 
     # create a dummy screen
     pixelsize = lenses[0].pixel_size # [mm]
@@ -330,10 +331,11 @@ def propagate(lenses, texture = None, nb_rays=20, wavelengths = [656.2725, 587.5
         texture[size_pattern[0]//2, int(0.2*size_pattern[1]):int(0.8*size_pattern[1]), :] = 1                 # Horizontal
         texture[int(0.4*size_pattern[0]):int(0.6*size_pattern[0]), int(0.7*size_pattern[1]) + 0*4, :] = 1           # Small vertical
 
-    if nb_wavelengths == 3:
+    if plot and (nb_wavelengths == 3):
         plt.figure()
         plt.plot()
         plt.imshow(texture)
+        plt.show()
 
     texture_torch = torch.Tensor(texture).float().to(device=lenses[0].device)
     texture_torch = torch.permute(texture_torch, (1,0,2)) # Permute
@@ -372,8 +374,9 @@ def propagate(lenses, texture = None, nb_rays=20, wavelengths = [656.2725, 587.5
     I_rendered = torch.stack(Is, axis=-1).numpy()#.astype(np.uint8)
     print(f"Elapsed rendering time: {time.time()-time_start:.3f}s")
 
-    if nb_wavelengths==3:
+    if plot and (nb_wavelengths==3):
         plt.imshow(np.flip(I_rendered/I_rendered.max(axis=(0,1))[np.newaxis, np.newaxis, :], axis=2))
+        plt.title("RGB rendered with dO")
         plt.show()
     ax, fig = plt.subplots((nb_wavelengths+2)// 3, 3, figsize=(15, 5))
     ax.suptitle("Rendered with dO")
@@ -385,9 +388,11 @@ def propagate(lenses, texture = None, nb_rays=20, wavelengths = [656.2725, 587.5
             fig[i].imshow(I_rendered[:,:,i])
         if save_dir is not None:
             plt.imsave(os.path.join(save_dir, f"rendered_{wavelengths[i]}.png"), I_rendered[:,:,i])
-    plt.show()
-    plt.imshow(np.sum(I_rendered, axis=-1))
-    plt.show()
+    if plot:
+        plt.show()
+        plt.imshow(np.sum(I_rendered, axis=2))
+        plt.title("Sum of all wavelengths")
+        plt.show()
     if nb_wavelengths==3 and save_dir is not None:
         plt.imsave(os.path.join(save_dir, "rendered_rgb.png"), I_rendered/I_rendered.max(axis=(0,1))[np.newaxis, np.newaxis, :])
 
@@ -426,6 +431,7 @@ def sample_rays_pos(wavelength, angles, x_pos, y_pos, z_pos, device, d = None):
             torch.sin(angles_psi),
             torch.cos(angles_phi)*torch.cos(angles_psi)), axis=-1
         ).float()
+    # If d is provided, use it to create the rays, preferred method
     else:
         pos = torch.tensor([x_pos, y_pos, z_pos]).repeat(d.shape[0], 1).float()
 
@@ -444,6 +450,7 @@ def sample_rays_pos(wavelength, angles, x_pos, y_pos, z_pos, device, d = None):
         torch.cos(angles_psi),), axis=-1
     ).float() """
 
+    # Normalize the direction vectors
     d = d/torch.norm(d, p=2, dim=1)[:, None]
 
     return do.Ray(o, d, wavelength, device=device)
@@ -481,7 +488,7 @@ def trace_psf_from_point_source(lenses=None, angles=[[0, 0]], x_pos=0, y_pos=0, 
     fig.savefig('sanity_check_setup.pdf') """
 
     ray = sample_rays_pos(wavelength, angles, x_pos, y_pos, z_pos, lenses[0].device, d = d)
-    
+    # Plot the position of the rays when they arrive on the first lens
     pos = ray(torch.tensor([70.120]))
     if show_res:
         plt.scatter(pos[:,1], pos[:,0])
@@ -490,6 +497,8 @@ def trace_psf_from_point_source(lenses=None, angles=[[0, 0]], x_pos=0, y_pos=0, 
     #plt.show()
     
     oss = [0 for i in range(len(lenses))]
+
+    # Trace rays through each lens in the system
     for i, lens in enumerate(lenses[:-1]):
         if show_rays:
             ray, valid, oss_mid = lens.trace_r(ray)
@@ -499,7 +508,7 @@ def trace_psf_from_point_source(lenses=None, angles=[[0, 0]], x_pos=0, y_pos=0, 
         if not ignore_invalid:
             ray.o = ray.o[valid, :]
             ray.d = ray.d[valid, :]
-
+    # Plot the position of the rays when they arrive on the second lens
     pos = ray(torch.tensor([np.cos(-9.088)*75.0]))
     if show_res:
         plt.figure()
@@ -509,6 +518,7 @@ def trace_psf_from_point_source(lenses=None, angles=[[0, 0]], x_pos=0, y_pos=0, 
     
     #print("Mean angle out of first n-1 groups: ", torch.mean(torch.atan2(ray.d[:,0], ray.d[:, 2])*180/np.pi))
 
+    # Trace rays to the sensor
     if show_rays:
         ps, oss_final = lenses[-1].trace_to_sensor_r(ray, ignore_invalid=True)
         oss[-1] = oss_final
@@ -517,7 +527,6 @@ def trace_psf_from_point_source(lenses=None, angles=[[0, 0]], x_pos=0, y_pos=0, 
             fig.savefig(os.path.join(save_dir, "setup_with_rays.svg"), format="svg")
     else:
         ps = lenses[-1].trace_to_sensor(ray, ignore_invalid=True)
-        
     if normalize:
         if type(normalize) == bool:
             lim = 0.04
@@ -525,10 +534,11 @@ def trace_psf_from_point_source(lenses=None, angles=[[0, 0]], x_pos=0, y_pos=0, 
             lim = normalize        
     else:
         lim = 14
-    lenses[-1].spot_diagram(
+    
+    """ lenses[-1].spot_diagram(
         ps[...,:2], show=show_res, xlims=[-lim, lim], ylims=[-lim, lim], color=colors_list[0]+'.',
         savepath='sanity_check_field.png', normalize = normalize
-    )
+    ) """
 
     if not show_res:
         plt.close()

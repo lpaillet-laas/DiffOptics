@@ -14,6 +14,19 @@ list_of_files.sort()
 n_lam = len(list_of_files)
 
 def compute_A(list_of_files, nb_pts, n_lam, pixel_size = 0.02, kernel_size=11):
+    """
+    Compute the matrix A for PSF reduction. It is made from the PSFs in files list_of_files.
+
+    Args:
+        list_of_files (list): List of file paths containing PSF matrices.
+        nb_pts (int): Number of points in each dimension of the PSF matrices.
+        n_lam (int): Number of wavelengths.
+        pixel_size (float, optional): Pixel size. Defaults to 0.005.
+        kernel_size (int, optional): Size of the kernel. Defaults to 11.
+
+    Returns:
+        torch.Tensor: Matrix A for PSF reduction.
+    """
     A = torch.zeros((nb_pts*nb_pts*n_lam, kernel_size*kernel_size))
     for f, file_path in enumerate(list_of_files):
         PSF_mat = np.load(file_path) # (nb_pts, nb_pts, <=nb_rays, 2)
@@ -36,9 +49,13 @@ def compute_A(list_of_files, nb_pts, n_lam, pixel_size = 0.02, kernel_size=11):
                 A[f*nb_pts*nb_pts + i*PSF_mat.shape[1] + j, :] = hist.flatten()
     #A = A[~torch.any(A.isnan(), dim=1), :]
     A = torch.nan_to_num(A, nan=0.0)
+    torch.save(A, f"/home/lpaillet/Documents/Codes/DiffOptics/examples/render_pattern_demo/A_{limit}lim_{nb_pts}pts.pt")
     return A
 
 def compute_A_pos_detector(list_of_files, nb_pts, limit, n_lam, pixel_size = 0.02, kernel_size=11):
+    # Probably useless
+
+    # Compute the new limits for the grid
     first_w = torch.from_numpy(np.load(list_of_files[0]))
     min_x, max_x = torch.min(first_w[...,1]), torch.max(first_w[...,1])
     min_y, max_y = torch.min(first_w[...,0]), torch.max(first_w[...,0])
@@ -62,7 +79,7 @@ def compute_A_pos_detector(list_of_files, nb_pts, limit, n_lam, pixel_size = 0.0
     A = torch.zeros((nb_pts_x*nb_pts_y*n_lam, kernel_size*kernel_size))
     for f, file_path in enumerate(list_of_files):
         PSF_mat = np.load(file_path) # (nb_pts, nb_pts, <=nb_rays, 2)
-        list_forgotten = [(x,y) for x in range(nb_pts_x) for y in range(nb_pts_y)]
+        list_forgotten = [(x,y) for x in range(nb_pts_x) for y in range(nb_pts_y)] # Fill in the gaps left by the Smile distorsion later on
         PSF_mat = np.flip(PSF_mat, (0,))
         PSF_mat = np.transpose(PSF_mat, (1, 0, 2, 3))
         for i in range(PSF_mat.shape[0]): # y
@@ -70,22 +87,17 @@ def compute_A_pos_detector(list_of_files, nb_pts, limit, n_lam, pixel_size = 0.0
                 ps = PSF_mat[i, j, ...]
                 ps = np.nan_to_num(ps, nan=0)
                 ps = ps[~np.any(ps == 0.0, axis=1), :].reshape(-1,2)
-                #hist = torch.histogramdd(torch.from_numpy(ps).flip(1), bins=kernel_size, density=False).hist
+
                 bins_i, bins_j, centroid = find_bins(ps, pixel_size, kernel_size)
                 hist = torch.histogramdd(torch.from_numpy(ps).float().flip(1), bins=(bins_j, bins_i), density=False).hist
                 
                 id_x = torch.round((centroid[1]+limit)/dist_between_points + abs(id_min_x)).int()
-                #if j == 0:
-                #    id_y = torch.round((nb_pts_y-1) - ((centroid[0]+limit)/dist_between_points + abs(id_min_y))).int()
                 id_y = torch.round((nb_pts_y-1) - ((centroid[0]+limit)/dist_between_points + abs(id_min_y))).int()
+
                 list_forgotten.remove((id_x, id_y))
-                if f == 17 and id_y==21:
-                    print(id_x)
-                    print(f"id non rounded: {(nb_pts_y-1) - ((centroid[0]+limit)/dist_between_points + abs(id_min_y))}")
-                    print(centroid[0])
-                #id_y = torch.round((centroid[0]+limit)/dist_between_points + abs(id_min_y)).int()
-                #print(id_y)
                 A[f*nb_pts_x*nb_pts_y + id_y*nb_pts_x + id_x, :] = hist.flatten()
+
+        # Filling the gaps with neighbour values
         for elem in list_forgotten:
             forgot_x, forgot_y = elem
             if dispersion_direction == 'x':
@@ -104,11 +116,9 @@ def compute_A_pos_detector(list_of_files, nb_pts, limit, n_lam, pixel_size = 0.0
                         A[f*nb_pts_x*nb_pts_y + forgot_y*nb_pts_x + forgot_x, :] = A[f*nb_pts_x*nb_pts_y + (forgot_y-1)*nb_pts_x + forgot_x, :]
                 else:
                     A[f*nb_pts_x*nb_pts_y + forgot_y*nb_pts_x + forgot_x, :] = A[f*nb_pts_x*nb_pts_y + (forgot_y+1)*nb_pts_x + forgot_x, :]
-    #A = A[~torch.any(A.isnan(), dim=1), :]
     A = torch.nan_to_num(A, nan=0.0)
     
     return A, nb_pts_x, nb_pts_y, id_min_x, id_min_y
-
 
 def some_tests(A, compactness=60, kernel_size=11):
     ps = A[0*nb_pts*nb_pts + 3*nb_pts+3, ...]
@@ -148,14 +158,31 @@ def some_tests(A, compactness=60, kernel_size=11):
     plt.show()
 
 def compute_centroid(points):
+    """
+    Compute the centroid of a set of points.
+
+    Args:
+        points (torch.Tensor or numpy.ndarray): The input points. If a numpy array is provided, it will be converted to a torch tensor.
+
+    Returns:
+        torch.Tensor: The centroid of the input points.
+
+    """
     points = points if type(points) is torch.Tensor else torch.from_numpy(points)
     return torch.mean(points, dim=0)
 
 def find_bins(points, size_bin, nb_bins=11):
-    #min_x, min_y = torch.min(points, dim=0).values
-    #max_x, max_y = torch.max(points, dim=0).values
+    """
+    Find the bins for a given set of points.
 
-    #bins = torch.zeros((nb_bins, nb_bins))
+    Args:
+        points (torch.Tensor): The input points.
+        size_bin (float): The size of each bin.
+        nb_bins (int, optional): The number of bins. Defaults to 11.
+
+    Returns:
+        tuple: A tuple containing the x-coordinates of the bins, the y-coordinates of the bins, and the centroid of the points.
+    """
     bins_i = torch.zeros((nb_bins+1))
     bins_j = torch.zeros((nb_bins+1))
     centroid = compute_centroid(points)
@@ -175,8 +202,8 @@ def generate_psf_at_pos(pos_x, pos_y, pos_lambda, limit, nb_pts, sub_G, sub_W, k
     id_x = (pos_x+limit)/(2*limit)*(nb_pts-1)
     id_y = (nb_pts-1) - (pos_y+limit)/(2*limit)*(nb_pts-1) # Invert y axis because top left is (0,0) in the PSF matrix and corresponds to +limit in the pattern (-lim -> nbpts ; lim -> 0)
 
-    id_x_close = torch.round((torch.tensor([pos_x])+limit)/(2*limit)*(nb_pts-1), decimals=1)
-    id_y_close = torch.round((nb_pts-1) - (torch.tensor([pos_y])+limit)/(2*limit)*(nb_pts-1), decimals=1)
+    id_x_close = torch.round((torch.tensor([pos_x])+limit)/(2*limit)*(nb_pts-1), decimals=3)
+    id_y_close = torch.round((nb_pts-1) - (torch.tensor([pos_y])+limit)/(2*limit)*(nb_pts-1), decimals=3)
 
     corner_1 = sub_G[(pos_lambda*nb_pts*nb_pts + torch.floor(id_y_close)*nb_pts + torch.floor(id_x_close)).int(), ...]              # NW
 
@@ -222,6 +249,7 @@ def generate_psf_at_pos(pos_x, pos_y, pos_lambda, limit, nb_pts, sub_G, sub_W, k
 
 def generate_psf_at_pos_detector(pos_x, pos_y, pos_lambda, limit, nb_pts, nb_pts_x, nb_pts_y,
                                  id_min_x, id_min_y, sub_G, sub_W, kernel_size=11, show=True):
+    # Probably useless
 
     pos_x = torch.tensor([pos_x])
     pos_y = torch.tensor([pos_y])
@@ -515,19 +543,35 @@ def heatmap_from_database(A, limit, nb_pts, K=None, k_min=20, k_max=122, nb_comp
     return heatmap_setup
 
 def compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam = 55, sub_folder = "database_for_comparison", K=None, k_min=20, k_max=122, nb_compar=2000,
-                                        pos_on_det = False,
+                                        pos_on_det = False, reduction_factor=1,
                                         pixel_size=0.02, kernel_size=11, method = 'svd'):
     if pos_on_det:
         A, nb_pts_x, nb_pts_y, id_min_x, id_min_y = compute_A_pos_detector(list_of_files, nb_pts, limit, n_lam, pixel_size= pixel_size, kernel_size=kernel_size)
     else:
-        A = compute_A(list_of_files, nb_pts, n_lam, pixel_size= pixel_size, kernel_size=kernel_size)
-
+        try:
+            A = torch.load(f"/home/lpaillet/Documents/Codes/DiffOptics/examples/render_pattern_demo/A_{limit}lim_{nb_pts}pts.pt")
+        except:
+            A = compute_A(list_of_files, nb_pts, n_lam, pixel_size= pixel_size, kernel_size=kernel_size)
+    if reduction_factor != 1:
+        A = A.reshape(n_lam, nb_pts, nb_pts, kernel_size*kernel_size)
+        #A = A[:, ::reduction_factor,::reduction_factor,:].flatten(start_dim=0, end_dim=2)
+        f = lambda m, n: [i*n//m + n//(2*m) for i in range(m)]
+        sub_sampling = f(int(nb_pts//reduction_factor), nb_pts)
+        print(f"len: {len(sub_sampling)}; {sub_sampling}")
+        A = A.index_select(1, torch.tensor(sub_sampling)).index_select(2, torch.tensor(sub_sampling))
+        A = A.flatten(start_dim=0, end_dim=2)
+        nb_pts = int(nb_pts//reduction_factor)
+        print(A.shape)
     if method == 'svd':
+        time_svd = time.time()
         U, S, V = torch.linalg.svd(A, full_matrices=False)
+        print(f"Finished SVD in {(time.time() - time_svd):.3f} seconds")
     elif method == 'svd_squared':
         U, S, V = torch.linalg.svd(torch.sqrt(A), full_matrices=False)
     list_of_psf = list(glob.glob(dir_name + f"{sub_folder}/*.npy"))
-
+    
+    if nb_compar is None:
+        nb_compar = len(list_of_psf)
     if K is None:
         K = list(range(k_min, k_max))
     else:
@@ -535,9 +579,9 @@ def compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam = 55
     list_rmse = np.zeros((len(K),min(nb_compar, len(list_of_psf))))
     time_start = time.time()
 
-    heatmap_setup_indep = np.zeros((len(K), nb_pts, nb_pts, n_lam, 5)) - 1
-    heatmap_setup_same = np.zeros((len(K), nb_pts, nb_pts, n_lam, 5)) - 1
-    heatmap_setup_false = np.zeros((len(K), nb_pts, nb_pts, n_lam, 5)) - 1
+    heatmap_setup_indep = np.zeros((len(K), nb_pts, nb_pts, n_lam, (2*nb_compar)//(nb_pts*nb_pts))) - 1
+    heatmap_setup_same = np.zeros((len(K), nb_pts, nb_pts, n_lam, (2*nb_compar)//(nb_pts*nb_pts))) - 1
+    heatmap_setup_false = np.zeros((len(K), nb_pts, nb_pts, n_lam, (2*nb_compar)//(nb_pts*nb_pts))) - 1
 
     for k, compactness in enumerate(K):
         if 'svd' in method:
@@ -548,11 +592,28 @@ def compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam = 55
             sub_G = sub_U @ torch.diag(sub_S)
             sub_W = sub_V
         elif method == 'nmf':
+            time_start_nmf = time.time()
             sub_G, sub_W, err = run_nmf(A, n_components=compactness)
             sub_G = torch.from_numpy(sub_G)
             sub_W = torch.from_numpy(sub_W)
+            print(f"Finished NMF for K={compactness} in {(time.time() - time_start_nmf):.3f} seconds")
+        
+        """ weights_distrib = np.zeros((nb_pts, nb_pts, n_lam))
+        for i in range(nb_pts):
+            for j in range(nb_pts):
+                for l in range(n_lam):
+                    weights_distrib[i,j,l] = sub_G[(l*nb_pts*nb_pts + i*nb_pts + j), 0]
 
-        """ fig, ax = plt.subplots(compactness//6 + 1,6)
+        for l in range(n_lam):
+            plt.imshow(weights_distrib[:,:,l])
+            plt.colorbar()
+            plt.title(f"Weights distribution for lambda = {np.linspace(450,550,55)[l]:.2f}nm")
+            plt.show() """
+
+        if compactness < 6:
+            fig, ax = plt.subplots(1, compactness)
+        else:
+            fig, ax = plt.subplots((compactness-1)//6+1,6)
         plot_min = torch.min(sub_W).numpy()
         plot_max = torch.max(sub_W).numpy()
         cmap = 'seismic' if 'svd' in method else 'viridis'
@@ -561,12 +622,23 @@ def compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam = 55
         vmin = min(vmin, -vmax)
         vmax = -vmin
         for i in range(compactness):
-            bar = ax[i // 6, i%6].imshow(sub_W[i,:].reshape(kernel_size,kernel_size).T, origin='lower', interpolation='nearest', cmap=cmap, vmin=vmin, vmax=vmax)
+            if compactness < 6:
+                bar = ax[i].imshow(sub_W[i,:].reshape(kernel_size,kernel_size).T, origin='lower', interpolation='nearest', cmap=cmap, vmin=vmin, vmax=vmax)
+                ax[i].get_xaxis().set_visible(False)
+                ax[i].get_yaxis().set_visible(False)
+            else:
+                bar = ax[i // 6, i%6].imshow(sub_W[i,:].reshape(kernel_size,kernel_size).T, origin='lower', interpolation='nearest', cmap=cmap, vmin=vmin, vmax=vmax)
+                ax[i // 6, i%6].get_xaxis().set_visible(False)
+                ax[i // 6, i%6].get_yaxis().set_visible(False)
         fig.subplots_adjust(right=0.8)
         cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
         fig.colorbar(bar, cax=cbar_ax)
-        plt.show() """
+        plt.show()
 
+        max_neg_proportion = 0
+        mean_neg_proportion = 0
+        worst_neg_PSF = torch.zeros((kernel_size, kernel_size))
+        worst_neg_hist = torch.zeros((kernel_size, kernel_size))
 
         for i, file_path in enumerate(list_of_psf[:nb_compar]):
             PSF_mat = np.load(file_path)
@@ -595,16 +667,27 @@ def compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam = 55
                 PSF_at_pos = torch.square(PSF_at_pos)           #### SECOND METHOD
             neg_sum = - torch.sum(PSF_at_pos[PSF_at_pos < 0])
             abs_sum = torch.sum(torch.abs(PSF_at_pos))
+            PSF_at_pos_with_neg = PSF_at_pos
             PSF_at_pos = torch.clamp(PSF_at_pos, min=0.0)
+            PSF_at_pos /= torch.sum(PSF_at_pos) # Normalize the PSF
+            hist /= np.sum(hist) # Normalize the histogram
+
             PSF_at_pos = PSF_at_pos.reshape(kernel_size,kernel_size).T.numpy()
+            mean_neg_proportion = i/(i+1)*mean_neg_proportion + (neg_sum/abs_sum)/(i+1)
 
             mask = np.logical_or(hist > 0, PSF_at_pos > 0)
             rmse_mask = np.sqrt(np.mean(((hist - PSF_at_pos)[mask])**2))
             rmse = np.sqrt(np.mean(((hist - PSF_at_pos))**2))
             list_rmse[k, i] = rmse
             
+            if 'svd' in method and neg_sum/abs_sum > max_neg_proportion:
+                max_neg_proportion = neg_sum/abs_sum
+                
+                worst_neg_PSF = PSF_at_pos_with_neg
+                worst_neg_hist = hist
+
             #if (abs(y_pos) <= 1e-3) and (abs(x_pos) <= 1e-3):
-            if rmse > 550:
+            """ if rmse > 0:
                 print(f"rmse prev: {rmse:.2f}")
                 print(f"rmse: {rmse_mask:.2f}")
                 print(y_pos)
@@ -620,7 +703,7 @@ def compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam = 55
                 fig.subplots_adjust(right=0.8)
                 cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
                 fig.colorbar(bar, cax=cbar_ax)
-                plt.show()
+                plt.show() """
 
             """ print(f"rmse: {rmse:.2f}")
             ind_max = np.argmax(np.abs(hist-PSF_at_pos))
@@ -634,7 +717,6 @@ def compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam = 55
             hist_same = hist/ps.shape[0]
             PSF_at_pos_same = PSF_at_pos/ps.shape[0]
 
-            hist = hist/np.sum(hist)
             PSF_at_pos_indep = PSF_at_pos/np.sum(PSF_at_pos)
 
             rmse_same = np.sqrt(np.mean((hist_same - PSF_at_pos_same)**2))
@@ -643,15 +725,16 @@ def compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam = 55
             #id_x = torch.floor((torch.tensor([x_pos])+limit)/(2*limit)*(nb_pts-1)).int()
             #id_y = torch.floor((nb_pts-1) - (torch.tensor([y_pos])+limit)/(2*limit)*(nb_pts-1)).int()
 
-            id_x = torch.round((torch.tensor([x_pos])+limit)/(2*limit)*(nb_pts-1), decimals=1).int()
-            id_y = torch.round((nb_pts-1) - (torch.tensor([y_pos])+limit)/(2*limit)*(nb_pts-1), decimals=1).int()
-            #id_y = torch.round((torch.tensor([y_pos])+limit)/(2*limit)*(nb_pts-1), decimals=1).int()
+            id_x = torch.round((torch.tensor([x_pos])+limit)/(2*limit)*(nb_pts-1), decimals=3).int()
+            id_y = torch.round((nb_pts-1) - (torch.tensor([y_pos])+limit)/(2*limit)*(nb_pts-1), decimals=3).int()
+
+            #id_x = torch.floor((torch.tensor([x_pos])+limit)/(2*limit)*(nb_pts-1)).int()
+            #id_y = torch.floor((nb_pts-1) - (torch.tensor([y_pos])+limit)/(2*limit)*(nb_pts-1)).int()
             """ if (lambda_pos == 19) and (id_y == 4) and (rmse > 5):
                 print("Position: ", x_pos, y_pos)
                 plt.scatter(ps[...,1], ps[...,0], s=0.1)
                 plt.title(f"Position: x={id_x}")
                 plt.show() """
-
             ind_same = np.where(heatmap_setup_same[k, id_y, id_x, lambda_pos, :]==-1)[0][0]
             ind_indep = np.where(heatmap_setup_indep[k, id_y, id_x, lambda_pos, :]==-1)[0][0]
             ind_false = np.where(heatmap_setup_false[k, id_y, id_x, lambda_pos, :]==-1)[0][0]
@@ -659,10 +742,31 @@ def compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam = 55
             heatmap_setup_same[k, id_y, id_x, lambda_pos, ind_same] = rmse_same
             heatmap_setup_indep[k, id_y, id_x, lambda_pos, ind_indep] = rmse_indep
             heatmap_setup_false[k, id_y, id_x, lambda_pos, ind_false] = rmse
-                
+            #heatmap_setup_false[k, id_y, id_x, lambda_pos, ind_false] = np.mean(np.std(ps, axis=0))
 
         print(f"Finished for K={compactness} in {time.time() - time_start:.3f} seconds")
-        print(f"Mean unnormalized RMSE: {np.mean(list_rmse[k, :]):.3f}")
+        print(f"Mean unnormalized RMSE: {np.mean(list_rmse[k, :]):.3e}")
+
+        if 'svd' in method:
+            fig, ax = plt.subplots(1,2)
+            plot_min = torch.min(worst_neg_PSF).numpy()
+            plot_max = torch.max(worst_neg_PSF).numpy()
+            cmap = 'seismic' if 'svd' in method else 'viridis'
+            vmin = plot_min
+            vmax = plot_max
+            vmin = min(vmin, -vmax)
+            vmax = -vmin
+            ax[0].imshow(worst_neg_hist.reshape(kernel_size,kernel_size).T, origin='lower', interpolation='nearest', cmap=cmap, vmin=vmin, vmax=vmax)
+            bar = ax[1].imshow(worst_neg_PSF.reshape(kernel_size,kernel_size).T, origin='lower', interpolation='nearest', cmap=cmap, vmin=vmin, vmax=vmax)
+            fig.subplots_adjust(right=0.8)
+            cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+            fig.colorbar(bar, cax=cbar_ax)
+            fig.suptitle(f"Max proportion of negative values: {max_neg_proportion*100:.4f}%")
+            print(f"Max proportion of negative values: {max_neg_proportion*100:.4f}%")
+            print(f"Mean proportion of negative values: {mean_neg_proportion*100:.4f}%")
+            plt.show()
+
+
     if 'svd' in method:
         prefix = "rmse"
     elif method == 'nmf':
@@ -682,6 +786,19 @@ def compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam = 55
 
     heatmap_indep_name = f"{prefix}_heatmap_normalized_indep_{n_lam}w_{limit}lim_{nb_pts}pts.npy"
     np.save("/home/lpaillet/Documents/Codes/DiffOptics/examples/render_pattern_demo/" + heatmap_indep_name, heatmap_setup_indep)
+
+    heatmap_setup_false[heatmap_setup_false == -1] = np.nan
+    #heatmap_setup_false = np.nanmean(heatmap_setup_false, axis=(-1))[...,0]
+    heatmap_setup_false = np.nanmean(heatmap_setup_false, axis=(-2, -1))
+
+    plt.figure()
+    plt.imshow(heatmap_setup_false[0, ...], origin='lower', interpolation='nearest', extent=[-limit, limit, -limit, limit])
+    plt.title(f"Mean RMSE for K={K}")
+    plt.xlabel("x [mm]")
+    plt.ylabel("y [mm]")
+    clb = plt.colorbar()
+    clb.ax.set_title(f"RMSE for {ps.shape[0]} rays")
+    plt.show()
     return list_rmse
 
 def plot_rmse(limit, nb_pts, w=55, file_path = "/home/lpaillet/Documents/Codes/DiffOptics/examples/render_pattern_demo/", data='comparison', method = 'svd', grid_type = "regular", measure='mean'):
@@ -753,7 +870,7 @@ pixel_size = 0.005
 #A = compute_A(list_of_files, nb_pts, n_lam, pixel_size= pixel_size, kernel_size=kernel_size)
 #A, _ = compute_A_pos_detector(list_of_files, nb_pts, limit, n_lam, pixel_size= pixel_size, kernel_size=kernel_size)
 #compare_to_A(A, K=list(range(10,122)), nb_compar=1000)
-compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam, sub_folder = "2.56_exact_regular_database_for_comparison", K=list(range(40,41)), method = 'svd', nb_compar=4000,
+compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam, sub_folder = "2.56_database_for_comparison", K=[5, 10, 20, 30, 40, 50, 60, 70, 80, 90], method = 'svd', nb_compar=None,
                                     pos_on_det=False, pixel_size=pixel_size, kernel_size=kernel_size)
 #compare_with_database(A, limit, nb_pts, K=list(range(3, 122)), nb_compar=4000, method = 'svd', sub_folder = "2.56_exact_regular_database_for_comparison", pixel_size=pixel_size, kernel_size=kernel_size, show=True)
 #heatmap_from_database(A, limit, nb_pts, K=list(range(10,122)), nb_compar=4000, pixel_size=pixel_size, kernel_size=kernel_size, normalize='indep')
@@ -763,4 +880,4 @@ compute_graph_heatmap_from_database(list_of_files, limit, nb_pts, n_lam, sub_fol
 #plot_rmse(limit, nb_pts, w=n_lam, data='comparison', method = 'svd', grid_type = "regular", measure='mean')
 #plot_heatmap(limit, nb_pts, K=0, w=n_lam, measure='mean', method='svd', grid_type = "regular", normalize = 'indep')
 #plot_heatmap(limit, nb_pts, K=0, w=n_lam, measure='mean', method='svd', grid_type = "regular", normalize = 'same')
-plot_heatmap(limit, nb_pts, K=0, w=n_lam, measure='mean', method='svd', grid_type = "regular", normalize = False)
+#plot_heatmap(limit, nb_pts, K=0, w=n_lam, measure='mean', method='svd', grid_type = "unregular", normalize = False)

@@ -2,6 +2,7 @@ from .basics import *
 from .shapes import *
 from scipy.interpolate import LSQBivariateSpline
 import matplotlib.pyplot as plt
+import torch.nn.functional as nnF
 import copy
 import pathlib
 
@@ -41,13 +42,15 @@ class Lensgroup(Endpoint):
     - In the forward mode, rays begin at the surface with "d = 0" and propagate along the +z axis, e.g. from scene to image plane.
     - In the backward mode, rays begin at the surface with "d = d_max" and propagate along the -z axis, e.g. from image plane to scene.
     """
-    def __init__(self, origin=np.zeros(3), shift=np.zeros(3), theta_x=0., theta_y=0., theta_z=0., device=torch.device('cpu')):
+    def __init__(self, origin=np.zeros(3), shift=np.zeros(3), theta_x=0., theta_y=0., theta_z=0., rotation_order = 'xyz', device=torch.device('cpu')):
         self.origin = torch.Tensor(origin).to(device)
         self.shift = torch.Tensor(shift).to(device)
         self.theta_x = torch.Tensor(np.asarray(theta_x)).to(device)
         self.theta_y = torch.Tensor(np.asarray(theta_y)).to(device)
         self.theta_z = torch.Tensor(np.asarray(theta_z)).to(device)
         self.device = device
+
+        self.rotation_order = rotation_order
 
         # Sequentials properties
         self.surfaces = []
@@ -83,9 +86,17 @@ class Lensgroup(Endpoint):
     
     def _compute_transformation(self, _x=0.0, _y=0.0, _z=0.0):
         # we compute to_world transformation given the input positional parameters (angles)
-        R = ( rodrigues_rotation_matrix(torch.Tensor([1, 0, 0]).to(self.device), torch.deg2rad(self.theta_x+_x)) @ 
-              rodrigues_rotation_matrix(torch.Tensor([0, 1, 0]).to(self.device), torch.deg2rad(self.theta_y+_y)) @ 
-              rodrigues_rotation_matrix(torch.Tensor([0, 0, 1]).to(self.device), torch.deg2rad(self.theta_z+_z)) )
+
+        rotations = [None for _ in range(3)]
+        for i, char in enumerate(self.rotation_order):
+            if char == 'x':
+                rotations[i] = rodrigues_rotation_matrix(torch.Tensor([1, 0, 0]).to(self.device), torch.deg2rad(self.theta_x+_x))
+            elif char == 'y':
+                rotations[i] = rodrigues_rotation_matrix(torch.Tensor([0, 1, 0]).to(self.device), torch.deg2rad(self.theta_y+_y))
+            elif char == 'z':
+                rotations[i] = rodrigues_rotation_matrix(torch.Tensor([0, 0, 1]).to(self.device), torch.deg2rad(self.theta_z+_z))
+        R = rotations[0] @ rotations[1] @ rotations[2]
+
         t = self.origin + R @ self.shift
         return Transformation(R, t)
     
@@ -400,7 +411,14 @@ class Lensgroup(Endpoint):
             plot(ax, z, x, color)
 
         if len(self.surfaces) == 1: # if there is only one surface, then it has to be the aperture
-            draw_aperture(ax, self.surfaces[0], color)
+            s = self.surfaces[0]
+            if isinstance(s, ThinLens):
+                ax.annotate('', xy=(s.d, s.r), xytext=(s.d, -s.r), arrowprops=dict(arrowstyle='<->', color='black'))
+                r = torch.linspace(-s.r, s.r, s.APERTURE_SAMPLING, device=self.device) # aperture sampling
+                z = s.surface_with_offset(r, torch.zeros(len(r), device=self.device))
+                plot(ax, z, r, color)
+            else:
+                draw_aperture(ax, self.surfaces[0], color)
         else:
             # draw sensor plane
             if with_sensor:
@@ -412,10 +430,12 @@ class Lensgroup(Endpoint):
             # draw surface
             for i, s in enumerate(self.surfaces):
                 # find aperture
-                if i < len(self.surfaces)-1:
+                if i < len(self.surfaces)-1 and not isinstance(s, ThinLens):
                     if self.materials[i].A < 1.0003 and self.materials[i+1].A < 1.0003: # both are AIR
                         draw_aperture(ax, s, color)
                         continue
+                if isinstance(s, ThinLens):
+                    ax.annotate('', xy=(s.d, s.r), xytext=(s.d, -s.r), arrowprops=dict(arrowstyle='<->', color='black'))
                 r = torch.linspace(-s.r, s.r, s.APERTURE_SAMPLING, device=self.device) # aperture sampling
                 z = s.surface_with_offset(r, torch.zeros(len(r), device=self.device))
                 plot(ax, z, r, color)
@@ -448,7 +468,7 @@ class Lensgroup(Endpoint):
         return ax, fig
 
     # TODO: modify the tracing part to include oss
-    def plot_raytraces(self, oss, ax=None, fig=None, color='b-', show=True, p=None, valid_p=None, with_sensor=True):
+    def plot_raytraces(self, oss, ax=None, fig=None, color='b-', linewidth=1.0, show=True, p=None, valid_p=None, with_sensor=True):
         """
         Plot all ray traces (oss).
         """
@@ -477,7 +497,7 @@ class Lensgroup(Endpoint):
                     x = np.append(x, p[i,0])
                     z = np.append(z, p[i,2])
 
-            ax.plot(z, x, color, linewidth=1.0)
+            ax.plot(z, x, color, linewidth=linewidth)
         if show: plt.show()
         #else: plt.close()
         return ax, fig
@@ -962,17 +982,19 @@ class Lensgroup(Endpoint):
         # sensor and aperture plane samplings
         sample2 = self._generate_sensor_samples()
         sample3 = self._generate_aperture_samples()
-        sample3 = sample3 / aperture_reduction
 
         # wavelength [nm]
         wav = wavelength * np.ones(N)
         
         # sample ray
-        valid, ray = self._sample_ray_render(N, wav, sample2, sample3, offset)
-        ray_new = self.mts_Rt.transform_ray(ray)
+        valid, ray = self._sample_ray_render(N, wav, sample2, sample3, offset, aperture_angle=aperture_reduction)
+        # print("Rendered ray: ", ray)
+        ray_new = self.to_world.transform_ray(ray)
+        #ray_new = self.mts_Rt.transform_ray(ray)
+
         return valid, ray_new
     
-    def _sample_ray_render(self, N, wav, sample2, sample3, offset):
+    def _sample_ray_render(self, N, wav, sample2, sample3, offset, aperture_angle=np.pi/4):
         """
         `offset`: sensor position offsets [mm].
         """
@@ -1001,13 +1023,52 @@ class Lensgroup(Endpoint):
         d_xy = p_aperture - p_sensor
 
         # construct ray
+        #o = torch.Tensor(np.hstack((p_sensor, np.zeros((N,1)))).reshape((N,3)))
+        #p_sensor[..., 1] -= 2*self.shift[1].item()
+        d_sensor = self.d_sensor.item() if isinstance(self.d_sensor, np.ndarray) or isinstance(self.d_sensor, torch.Tensor) else self.d_sensor
+        o = torch.Tensor(np.hstack((p_sensor, np.zeros((N,1)) + d_sensor)).reshape((N,3)))
+        d = torch.Tensor(np.hstack((d_xy, self.aperture_distance.item() * np.ones((N,1)))).reshape((N,3)))
+        # print("max sqrt: ", torch.sqrt(d[:,0]**2 + d[:,1]**2).max())
+        # az = torch.atan2(torch.sqrt(d[:,0]**2 + d[:,1]**2), d[:,2])
+        # print("Angle max: ", az.max())
+        factor = self.aperture_distance.item()*np.tan(aperture_angle)/(torch.sqrt(d[:,0]**2 + d[:,1]**2).max()).item()
+        d = torch.Tensor(np.hstack((d_xy*factor, self.aperture_distance.item() * np.ones((N,1)))).reshape((N,3)))
+        d = normalize(d)
+        wavelength = torch.Tensor(wav).float()
+        created_ray = Ray(o, d, wavelength, device=self.device)
+        # trace        
+
         o = torch.Tensor(np.hstack((p_sensor, np.zeros((N,1)))).reshape((N,3)))
+        #o = torch.Tensor(np.hstack((p_sensor, np.zeros((N,1)) + d_sensor)).reshape((N,3)))
         d = torch.Tensor(np.hstack((d_xy, self.aperture_distance.item() * np.ones((N,1)))).reshape((N,3)))
         d = normalize(d)
-        wavelength = torch.Tensor(wav)
+        
+        shifted_ray = self.to_object.transform_ray(Ray(o, d, wavelength, device=self.device))
 
-        # trace
-        valid, ray = self._trace(Ray(o, d, wavelength, device=self.device))
+        # print("Created ray: ", created_ray)
+        # print("Shifted ray: ", shifted_ray)
+        # print("t: ", self.to_object.t)
+        # print("R: ", self.to_object.R)
+        is_shifted = False
+        # print("origin ray: ", created_ray.o)
+        # kept_o = created_ray.o.clone().detach()
+
+        #created_ray.o[...,0] -= 2*(self.shift[0].item() + self.origin[0].item())
+
+        # Used because the acquisition is shifted afterwards, so that's why the *2 is here, and why it isn't "compensated" as it is in the x direction
+        created_ray.o[...,1] -= 2*(self.shift[1].item() + self.origin[1].item()) # To shift the sensor plane to its true place #TODO Why only in y and not x ?? idk (x causes problems, y fixes problems so wtf)
+        if is_shifted:
+            valid, ray = self._trace(shifted_ray)
+        else:
+            valid, ray = self._trace(created_ray)
+        
+        # new_o_radius = np.sqrt(ray.o[:,0]**2 + ray.o[:,1]**2)
+        # print("max pre transport: ", new_o_radius.max())
+        # new_o = ray(torch.tensor([10.]))
+        # print("Ray o:", new_o)
+        # new_o = new_o - kept_o
+        # new_o_radius = np.sqrt(new_o[:,0]**2 + new_o[:,1]**2)
+        # print(new_o_radius.max())
         return valid, ray
 
     # ------------------------------------------------------------------------------------
@@ -1024,7 +1085,7 @@ class Lensgroup(Endpoint):
                 eta_ = eta[..., None]
             else:
                 eta_ = eta
-        
+                
         cosi = torch.sum(wi * n, axis=-1)
 
         if approx:
@@ -1048,7 +1109,6 @@ class Lensgroup(Endpoint):
         if stop_ind is None:
             stop_ind = len(self.surfaces)-1  # last index to stop
         is_forward = (ray.d[..., 2] > 0).all()
-
         # TODO: Check ray origins to ensure valid ray intersections onto the surfaces
         if is_forward:
             return self._forward_tracing(ray, stop_ind, record)
@@ -1073,7 +1133,11 @@ class Lensgroup(Endpoint):
 
             # get surface normal and refract 
             n = self.surfaces[i].normal(p[..., 0], p[..., 1])
-            valid_d, d = self._refract(ray.d, -n, eta)
+            ray.o = p
+            try:
+                valid_d, d = self.surfaces[i].refract(ray)
+            except AttributeError:
+                valid_d, d = self._refract(ray.d, -n, eta)
             
             # check validity
             valid = valid & valid_o & valid_d
@@ -2058,3 +2122,102 @@ class Mesh(Surface):
                 w1[...,0] * (w0[...,1] * s10 + w1[...,1] * s11)
             )
         return val
+    
+class ThinLens(Surface):
+    def __init__(self, r, d, f, is_square=False, device=torch.device('cpu')):
+        """ Thin lens surface. 
+        """
+        Surface.__init__(self, r, d, is_square=is_square, device=device)
+        self.f = torch.tensor([f])
+
+    def ray_surface_intersection(self, ray, active = None):
+        """ Solve ray-surface intersection and update rays.
+        """
+        # Solve intersection
+        t = (self.d - ray.o[...,2]) / ray.d[...,2]
+        new_o = ray.o + t.unsqueeze(-1) * ray.d
+        valid = (torch.sqrt(new_o[...,0]**2 + new_o[...,1]**2) < self.r)
+
+        if active is not None:
+            valid = valid & active
+
+        # Update rays
+        new_o = ray.o + ray.d * t.unsqueeze(-1)
+        
+        #new_o[~valid] = ray.o[~valid]
+
+        return valid, new_o
+    
+    def refract(self, ray):
+        """ For a thin lens, all rays will converge to z = f plane. Therefore we trace the chief-ray (parallel-shift to surface center) to find the final convergence point for each ray. 
+        
+            For coherent ray tracing, we can think it as a Fresnel lens with infinite refractive index.
+            (1) Lens maker's equation
+            (2) Spherical lens function
+        """
+        forward = (ray.d[..., 2] > 0).all()
+        # Calculate convergence point
+        if forward:
+            t0 = self.f / ray.d[..., 2]
+            xy_final = ray.d[..., :2] * t0.unsqueeze(-1)
+            z_final = torch.full_like(xy_final[..., 0].unsqueeze(-1), self.d.item() + self.f.item())
+            o_final = torch.cat([xy_final, z_final], dim=-1)
+        else:
+            t0 = - self.f / ray.d[..., 2]
+            xy_final = ray.d[..., :2] * t0.unsqueeze(-1)
+            z_final = torch.full_like(xy_final[..., 0].unsqueeze(-1), self.d.item() - self.f.item())
+            o_final = torch.cat([xy_final, z_final], dim=-1)
+        
+        # New ray direction
+        new_d = o_final - ray.o
+        new_d = nnF.normalize(new_d, p=2, dim=-1)
+        ray.d = new_d
+        
+        return True, new_d
+    
+    
+    def g(self, x, y):
+        return torch.zeros_like(x)
+    
+    def dgd(self, x, y):
+        return torch.zeros_like(x), torch.zeros_like(x)
+
+    def h(self, z):
+        return -z
+
+    def dhd(self, z):
+        return -torch.ones_like(z)
+    def surface(self, x, y):
+        return self.g(x, y)
+    def reverse(self):
+        pass
+    
+class FocusThinLens(ThinLens):
+    def __init__(self, r, d, f, is_square=False, device=torch.device('cpu')):
+        """ Thin lens surface. 
+        """
+        ThinLens.__init__(self, r, d, f, is_square=is_square, device=device)
+
+    def refract(self, ray):
+        """ For a thin lens, rays will always focus to the middle of the focal plane
+
+            For coherent ray tracing, we can think it as a Fresnel lens with infinite refractive index.
+            (1) Lens maker's equation
+            (2) Spherical lens function
+        """
+        forward = (ray.d[..., 2] > 0).all()
+        # Calculate convergence point
+        if forward:
+            xy_final = ray.d[..., :2]
+            z_final = torch.full_like(torch.zeros_like(xy_final[..., 0].unsqueeze(-1)), self.d.item() + self.f.item())
+            o_final = torch.cat([torch.zeros_like(xy_final), z_final], dim=-1)
+        else:
+            xy_final = ray.d[..., :2]
+            z_final = torch.full_like(torch.zeros_like(xy_final[..., 0].unsqueeze(-1)), self.d.item() - self.f.item())
+            o_final = torch.cat([torch.zeros_like(xy_final), z_final], dim=-1)
+        # New ray direction
+        new_d = o_final - ray.o
+        new_d = nnF.normalize(new_d, p=2, dim=-1)
+        ray.d = new_d
+        
+        return True, new_d

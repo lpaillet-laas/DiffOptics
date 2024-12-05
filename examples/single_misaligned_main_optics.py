@@ -21,8 +21,10 @@ from matplotlib import cm
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 save_dir = './render_pattern_demo/'
 
-d_R_lens = 8.652                                    # 1/2*Height of the lenses (in mm)
-d_R_prism = 12.0                                    # 1/2*Height of the prism (in mm)
+d_R_lens1 = 7.318                                   # 1/2*Height of the perfect lens (in mm)
+d_R_prism = 12.0
+#d_R_prism = 8.344                                   # 1/2*Height of the prism (in mm)
+d_R_lens2 = 12.7                                    # 1/2*Height of the doublet lens (in mm)
 angle = 53.4/2                                      # Angle of the prism
 
 d_x1 = 1.767909                                     # Abscissa of the foot of the first curvature
@@ -39,89 +41,136 @@ x3_e = 9.5-d_x3                                     # Distance between the curva
 d_length = curv_x3 - curv_x1                        # Length of the lens
 
 d_H = d_R_prism*2                                   # Height of the prism
-d_prism_length = 2*d_H*np.tan(angle*np.pi/180)      # Length of the prism
 
-d_F = 100                                            # Focal length of the lens
-d_back_F = 42.8                                   # Back focal length of the lens
+d_F = 50.0                                          # Focal length of the lens
+d_back_F = 43.2                                     # Back focal length of the lens
 
-perfect_lens_setup = [{'type': 'FocusThinLens',
+perfect_lens_setup = [{'type': 'ThinLens',
                  'params': {
                      'f': d_F,
                  },
                  'd': d_F,
-                 'R': d_R_lens,
+                 'R': d_R_lens1,
                 }]
 
 perfect_lens_materials = ['air', 'air']
 
-angle1 = 5.1 
-angle2 = 29.238 - angle1
-angle3 = 2*23.930 - angle2
-angle4 = 29.238 - angle3
+angle1 = 30.0
+angle2 = 2*30.0 - angle1
 
-d_prism_length = d_R_prism*(np.tan(angle1*np.pi/180) + 2*np.tan(angle2*np.pi/180) + 2*np.tan(angle3*np.pi/180) + np.tan(angle4*np.pi/180)).item()      # Length of the prism
-
-amici_prism_setup = [{'type': 'XYPolynomial',
+d_prism_length = d_R_prism*(np.cos(angle1*np.pi/180)*np.tan(angle1*np.pi/180) + np.cos(angle2*np.pi/180)*np.tan(angle2*np.pi/180)).item()      # Length of the prism
+print(d_prism_length)
+prism_setup = [{'type': 'XYPolynomial',
                         'params': { 'J':1,
-                                'ai': [0,0,-np.tan(angle1*np.pi/180).item()],
+                                'ai': [0,0,np.tan(angle1*np.pi/180).item()],
                             },
-                        'd': d_F + d_back_F,
-                        'R': d_R_prism
+                        'd': 0.0,
+                        'R': 12*np.cos(angle1*np.pi/180).item(),
+                        'is_square': True
                     },
                     {'type': 'XYPolynomial',
                         'params': { 'J':1,
-                                'ai': [0,0,np.tan(angle2*np.pi/180).item()],
+                                'ai': [0,0,-np.tan(angle2*np.pi/180).item()],
                             },
-                        'd': d_R_prism*(np.tan(angle2*np.pi/180) + np.abs(np.tan(angle1*np.pi/180))).item(),
-                        'R': d_R_prism
-                    },
-                    {'type': 'XYPolynomial',
-                        'params': { 'J':1,
-                                'ai': [0,0,-np.tan(angle3*np.pi/180).item()],
-                            },
-                        'd': d_R_prism*(np.tan(angle2*np.pi/180) + np.abs(np.tan(angle3*np.pi/180))).item(),
-                        'R': d_R_prism
-                    },
-                    {'type': 'XYPolynomial',
-                        'params': { 'J':1,
-                                'ai': [0,0,np.tan(angle4*np.pi/180).item()],
-                            },
-                        'd': d_R_prism*(np.tan(angle3*np.pi/180)+np.tan(angle4*np.pi/180)).item(),
-                        'R': d_R_prism
+                        'd': d_R_prism*(np.cos(angle2*np.pi/180)*np.tan(angle2*np.pi/180) + np.cos(angle1*np.pi/180)*np.abs(np.tan(angle1*np.pi/180))).item(),
+                        'R': 12*np.cos(angle2*np.pi/180).item(),
+                        'is_square': True
                     }]
 
-amici_prism_materials = ['air', 'N-SK2', 'N-SF10', 'N-SK2', 'air']
+prism_materials = ['air', 'N-BK7', 'air']
+
+doublet_length = 11.5
+
+doublet_setup = [{'type': 'Aspheric',
+                'params': {
+                    'c': 1/33.34,
+                    'k': 0.0,
+                    'ai': None,
+                },
+                #'d': 2*d_F + d_prism_length + d_F,
+                'd' : d_F,
+                'R': d_R_lens2
+                    },
+                {'type': 'Aspheric',
+                'params': {
+                    'c': - 1/22.28,
+                    'k': 0.0,
+                    'ai': None,
+                },
+                'd': 9.,
+                'R': d_R_lens2
+                },
+                {'type': 'Aspheric',
+                'params': {
+                    'c': - 1/291.070,
+                    'k': 0.0,
+                    'ai': None,
+                },
+                'd': 2.5,
+                'R': d_R_lens2
+                }
+                ]
+
+
+doublet_materials = ['air', 'N-BAF10', 'N-SF10', 'air']
 
 parameters_break = [{'type': 'XYPolynomial',
                         'params': { 'J':1,
                                 'ai': [0,0,0],
                             },
-                        'd': d_F + d_back_F + d_prism_length + 10.0,
-                        'R': d_R_prism
+                        'd': 10.0,
+                        'R': (d_back_F-10.)*np.arctan2(d_R_lens2, d_back_F).item(),
+                        'is_square': True
                     },
                     {'type': 'XYPolynomial',
                         'params': { 'J':1,
                                 'ai': [0,0,0],
                             },
                         'd': 0.0,
-                        'R': d_R_prism
+                        'R': (d_back_F-10.)*np.arctan2(d_R_lens2, d_back_F).item(),
+                        'is_square': True
                     }]
 
 parameters_break_materials = ['air', 'air', 'air']
 
-angle_misalign_prism = -5.0
-d_tilt_angle_final = 5.100 - angle4
-d_tilt_angle_final += 0.409
-d_tilt_angle_final *= -1
+angle_prism_y = - 19.680
+d_tilt_angle_final_y = angle_prism_y - 19.383
 
+angle_prism_x = 5.0 #*1/10
+prism_edge = torch.tensor([0., 0., 2*d_F], dtype=torch.float32)
+prism_center = torch.tensor([0., 0., 2*d_F + d_prism_length/2], dtype=torch.float32) # No rotation for now
+prism_center = prism_edge
+rotation_matrix_x = torch.tensor([[1, 0, 0],
+                                  [0, np.cos(angle_prism_x*np.pi/180), -np.sin(angle_prism_x*np.pi/180)],
+                                  [0, np.sin(angle_prism_x*np.pi/180), np.cos(angle_prism_x*np.pi/180)]]).float()
+rotation_matrix_y = torch.tensor([[np.cos(angle_prism_y*np.pi/180), 0, np.sin(angle_prism_y*np.pi/180)],
+                                    [0, 1, 0],
+                                    [-np.sin(angle_prism_y*np.pi/180), 0, np.cos(angle_prism_y*np.pi/180)]]).float()
 
-d_shift_value_x = 0.357
-d_shift_value_y = 4.993
+shift_prism = torch.tensor([0., 0., 0.]) + rotation_matrix_x.T @ rotation_matrix_y.T @ (- (rotation_matrix_x @ (prism_center - prism_edge) + prism_edge - prism_center))
+print("Shift: ", shift_prism)
+
+d_shift_value_x = -0.017        #/np.cos((90+d_tilt_angle_final)*np.pi/180)  # Shouldn't need this since all coordinates in Zemax are relative
+d_shift_value_y = 0.0
+d_shift_value_z = 0.0
+
+d_shift_value_break_x = (0.011*np.sin((d_tilt_angle_final_y)*np.pi/180).item() + 0.024)
+d_shift_value_break_z = (0.011*np.cos((d_tilt_angle_final_y)*np.pi/180).item() + 0.2)
+
+""" d_shift_value_y = np.sin(angle_prism_x*np.pi/180.).item()*d_F
+d_shift_value_z = -(1-np.cos(angle_prism_x*np.pi/180.)).item()*d_F
+
+rotation_matrix_lens_y = torch.tensor([[np.cos(d_tilt_angle_final_y*np.pi/180), 0, np.sin(d_tilt_angle_final_y*np.pi/180)],
+                                    [0, 1, 0],
+                                    [-np.sin(d_tilt_angle_final_y*np.pi/180), 0, np.cos(d_tilt_angle_final_y*np.pi/180)]]).float()
+[d_shift_value_x , d_shift_value_y, d_shift_value_z] = rotation_matrix_lens_y @ torch.tensor([0., d_shift_value_y, d_shift_value_z]) """
+
 if __name__ == '__main__':
     adjustment = 2.56
 
     usecase = 'compare_positions_trace'
-    usecase = 'compare_wavelength_trace'
+    #usecase = 'compare_wavelength_trace'
+    usecase = 'compare_psf_zemax'
     #usecase = 'save_pos_render'
     #usecase = 'optimize_psf_zemax'
     #usecase = 'get_dispersion'
@@ -129,36 +178,60 @@ if __name__ == '__main__':
     #usecase = 'psf_line'
     #usecase = 'kfk'
     #usecase = 'render_lots'
+    #usecase = 'spot_compare_zemax'
+
+    #usecase = 'mapping'
+    #usecase = "render_mapping"
 
     oversample = 1
-    
-    d_last_surface_distance = d_F + d_back_F +  d_prism_length
-    d_center_prism = d_F + d_back_F + d_prism_length/2
+    x_center_second_surface_prism = d_prism_length*np.sin(angle_prism_y*np.pi/180).item()
+    print(x_center_second_surface_prism)
+    d_last_surface_distance = 2*d_F + d_prism_length*np.cos((angle_prism_y)*np.pi/180).item()
+    d_last_surface_distance = 2*d_F + (rotation_matrix_x @ rotation_matrix_y @ torch.tensor([0., 0., d_prism_length]))[-1] + shift_prism[-1]
+    origin_last_surface = torch.tensor([0., 0., 2*d_F]) + rotation_matrix_x @ rotation_matrix_y @ torch.tensor([0., 0., d_prism_length]) + shift_prism
+    origin_last_surface = torch.tensor([0., 0., 2*d_F]) + rotation_matrix_y @ torch.tensor([0., 0., d_prism_length]) + shift_prism
+    print("origin_last_surface: ", origin_last_surface)
 
+    x_center_end_lens = origin_last_surface[0].item() + (d_F + doublet_length + d_shift_value_x)*np.sin(d_tilt_angle_final_y*np.pi/180).item()
+    d_lens_surface = 2*d_F + d_prism_length*np.cos(angle_prism_y*np.pi/180).item() + (d_F + doublet_length + d_shift_value_x)*np.cos(d_tilt_angle_final_y*np.pi/180).item()
+
+    print("Center: ", x_center_end_lens, d_lens_surface)
 
     #optimized_lens_shift = - 0.42
-    optimized_lens_shift = -0.00
-    print(d_F + d_back_F + d_prism_length + d_back_F + optimized_lens_shift)
-    list_d_sensor = [d_F + d_back_F,
-                     d_F + d_back_F + d_prism_length + d_back_F,
-                     d_F + d_back_F + d_prism_length + d_back_F + optimized_lens_shift]
-    list_r_last = [d_R_prism, d_R_prism, d_R_prism]
+    optimized_lens_shift = -0.134 #+ 0.009 #- 0.005
+    list_d_sensor = [2*d_F,
+                     d_prism_length + d_F,
+                     #2*d_F + d_prism_length + d_F + doublet_length + d_back_F + optimized_lens_shift]
+                     d_F + doublet_length + d_back_F + d_shift_value_break_z + optimized_lens_shift,
+                     d_back_F + optimized_lens_shift]
+    list_r_last = [d_R_prism, d_R_prism, d_R_prism, d_R_prism]
 
-    list_film_size = [[adjustment*100,adjustment*100] for i in range(3)]
-    list_pixel_size = [1/adjustment*80.0e-3]*3
-    list_theta_y = [0., 0., d_tilt_angle_final]
-    list_theta_x = [0., angle_misalign_prism, 0.]
-    list_theta_z = [0., 0., 0.]
-    list_origin = [None, [0., 0., d_center_prism], [0.,0.,d_last_surface_distance]]
-    list_shift = [[0., 0., 0.], [0., 0., -d_center_prism], [d_shift_value_x,d_shift_value_y,-d_last_surface_distance]]
+    list_film_size = [[680, 560] for i in range(4)]  
+    list_pixel_size = [1/adjustment*80.0e-3]*4
+    list_pixel_size = [10e-3]*4
+    list_theta_y = [0., angle_prism_y, d_tilt_angle_final_y, d_tilt_angle_final_y]
+    list_theta_x = [0., angle_prism_x, 0., 0.]
+    list_theta_z = [0., 0., 0., 0.]
+    list_origin = [None, [0., 0., 2*d_F], origin_last_surface.tolist(), [x_center_end_lens, 0., d_lens_surface]]
+    list_shift = [[0., 0., 0.], shift_prism.tolist(), [d_shift_value_x,d_shift_value_y, d_shift_value_z], [d_shift_value_break_x, 0., d_shift_value_break_z]]
+    list_rotation_order = ['xyz', 'yxz', 'xyz', 'xyz']
     system_wavelengths = torch.linspace(450, 650, 28*oversample)
 
-    lens_group = HSSystem(list_systems_surfaces=[perfect_lens_setup, amici_prism_setup, parameters_break], list_systems_materials=[perfect_lens_materials, amici_prism_materials, parameters_break_materials],
+    lens_group = HSSystem(list_systems_surfaces=[perfect_lens_setup, prism_setup, doublet_setup, parameters_break], list_systems_materials=[perfect_lens_materials, prism_materials, doublet_materials, parameters_break_materials],
                         list_d_sensor=list_d_sensor, list_r_last=list_r_last, list_film_size=list_film_size, list_pixel_size=list_pixel_size,
                         list_theta_y=list_theta_y, list_theta_x=list_theta_x, list_theta_z=list_theta_z,
-                        list_origin=list_origin, list_shift=list_shift,
+                        list_origin=list_origin, list_shift=list_shift, list_rotation_order=list_rotation_order,
                         wavelengths = system_wavelengths,
-                        device=device, save_dir="./render_pattern_demo/")
+                        device=device, save_dir="../system_comparison_with_zemax/single_prism_misaligned/images/")
+    
+    prism = lens_group.system[1]
+
+    """ R = ( do.rodrigues_rotation_matrix(torch.Tensor([0, 1, 0]).to(device), torch.deg2rad(torch.Tensor(np.asarray(angle_prism_y)))) @ 
+         do.rodrigues_rotation_matrix(torch.Tensor([1, 0, 0]).to(device), torch.deg2rad(torch.Tensor(np.asarray(angle_prism_x))))  @       
+              do.rodrigues_rotation_matrix(torch.Tensor([0, 0, 1]).to(device), torch.deg2rad(torch.Tensor(np.asarray(0.)))) )
+    t = prism.origin + R @ prism.shift
+    prism.to_world = do.Transformation(R, t)
+    prism.to_object = prism.to_world.inverse() """
 
     lens_group.export_system("system.yml")
     #lens_group.d_subsystems = torch.tensor([0, 0, 0])
@@ -176,6 +249,206 @@ if __name__ == '__main__':
     if usecase == 'spot':
         wavelengths = torch.tensor([450, 550, 650])
         lens_group.plot_spot_less_points(400, 20*1e-3, wavelengths = wavelengths)
+
+    elif usecase == 'spot_compare_zemax':
+        lens_group.compare_spot_zemax(path_compare='/home/lpaillet/Documents/Codes/article-distorsions-dont-matter-data/data_zemax/single_prism_misaligned_5deg_delta_beta_c/')
+
+    elif usecase == 'render_mapping':
+        #wavelengths = torch.tensor([450., 520.0, 650., 700., 800.]).float().to(device)
+        wavelengths = torch.linspace(450, 650, 28).float()
+        nb_rays = 1
+
+        texture = np.ones((512, 512, len(wavelengths)))
+        #texture = np.zeros((512, 512, len(wavelengths)))
+        #texture[25, :, :] = 1
+        #texture[:125, 100, :] = 1
+
+        texture = scipy.io.loadmat("/home/lpaillet/Documents/Codes/simca/datasets_reconstruction/mst_datasets/cave_1024_28_train/scene109.mat")['img_expand'][:512,:512].astype('float32')
+
+        texture = torch.from_numpy(texture).float().to(device)
+
+        save_dir="/home/lpaillet/Documents/Codes/article-distorsions-dont-matter/images/"
+
+        plt.figure()
+        plt.imshow(torch.load("mask.pt"), cmap='gray')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'mask_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(texture[:,:,0], cmap='Purples')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'cube1_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(texture[:,:,7], cmap='Blues')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'cube2_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(texture[:,:,14], cmap='Greens')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'cube3_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(texture[:,:,21], cmap='Oranges')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'cube4_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(texture[:,:,-1], cmap='Reds')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'cube5_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+        plt.show()
+
+
+
+        z0 = torch.tensor([lens_group.system[-1].d_sensor*torch.cos(lens_group.system[-1].theta_y*np.pi/180) + lens_group.system[-1].origin[-1] + lens_group.system[-1].shift[-1]]).item()
+        
+        #mapping_cube = lens_group.get_mapping_scene_detector(wavelengths, shape_scene = [512, 512]).int()
+        mapping_cube = torch.load('mapping_cube_singlemis.pt', map_location='cpu').int()
+        
+        #image = lens_group.render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
+        #                texture=texture, aperture_reduction=0.05, plot=False)
+        image = torch.load('render_saved_pos_singlemis.pt', map_location='cpu')
+        
+        image = image.permute(2, 0, 1)
+        image = image.unsqueeze(0)
+
+        acq = image.sum(1).flip(1)
+
+        mapping_cube = mapping_cube.permute(2,0,1,3)
+        mapping_cube[:, :, :, 0] = image.shape[2] -1  - mapping_cube[:, :, :, 0]
+        #mapping_cube[:, :, :, 1] = image.shape[3] -1  - mapping_cube[:, :, :, 1]
+
+        bs, nC, h, w = image.shape
+
+        fake_output = torch.zeros(mapping_cube.shape[:-1]).unsqueeze(0).repeat(bs, 1, 1, 1).float()
+
+        row_indices = mapping_cube[..., 0]
+        col_indices = mapping_cube[..., 1]
+
+        print(fake_output.shape)
+        print(acq.shape)
+        print(mapping_cube.shape)
+        print(image.shape)
+        for b in range(bs):
+            for i in range(nC):
+                fake_output[b, i] = acq[b, row_indices[i], col_indices[i]].rot90(2, (0, 1)).flip(0)
+            
+        fig, axes = plt.subplots(nC//4, 4, figsize=(15, 5))
+
+        # Plot each slice of new_cube in a separate subplot
+        for i in range(nC):
+            axes[i//4, i%4].imshow(fake_output[0, i,:,:])
+            axes[i//4, i%4].set_title(f'Slice {i}')
+
+        plt.figure()
+        plt.imshow(acq[0], cmap='gray')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'acq_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(fake_output[0, 0,:,:], cmap = 'Purples')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'mapping1_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(fake_output[0, 7,:,:], cmap = 'Blues')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'mapping2_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(fake_output[0, 14,:,:], cmap = 'Greens')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'mapping3_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(fake_output[0, 21,:,:], cmap = 'Oranges')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'mapping4_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(fake_output[0, -1,:,:], cmap = 'Reds')
+        plt.axis('off')
+        plt.subplots_adjust(top = 1, bottom = 0, right = 1, left = 0, 
+            hspace = 0, wspace = 0)
+        plt.margins(0,0)
+        plt.gca().xaxis.set_major_locator(plt.NullLocator())
+        plt.gca().yaxis.set_major_locator(plt.NullLocator())
+        plt.savefig(save_dir + 'mapping5_overview.svg', format='svg', bbox_inches = 'tight', pad_inches = 0)
+
+        plt.figure()
+        plt.imshow(torch.sum(texture, dim=-1))
+        plt.show()
+
+        
+
+    elif usecase == 'mapping':
+        wavelengths = torch.tensor(system_wavelengths).float().to(device)
+        wavelengths = torch.tensor([450., 520.0, 650.]).float().to(device)
+
+        #for i in range(lens_group.size_system):
+        #    lens_group.system[i].film_size = [800, 600]  
+
+        mapping_cube = lens_group.get_mapping_scene_detector(wavelengths, shape_scene = [512, 512])
+
+        torch.save(mapping_cube, 'mapping_cube.pt')
+        
     elif usecase == 'test':
         N = 10
         wavelength = torch.tensor([520.0])
@@ -206,22 +479,22 @@ if __name__ == '__main__':
         lens_group.compare_spot(400, 20*1e-3, opposite = [True, False], shift = [-0.014, 0.],
                                 path_compare='/home/lpaillet/Documents/Codes/simca/', model = 'simca',
                                 config_path = '/home/lpaillet/Documents/Codes/simca/simca/configs/cassi_system_optim_optics_full_triplet_sd_cassi_prism_propag.yml')
+        
+
     elif usecase == 'compare_positions_trace':
         N = 2
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
         wavelength = 520.0
 
         line_pos1, col_pos1 = 0., 0.
-        line_pos2, col_pos2 = 2.5, 0.
-        line_pos3, col_pos3 = -2.5, 0.
-        line_pos4, col_pos4 = 0., 2.5
-        line_pos5, col_pos5 = 0., -2.5
-        list_source_pos = [torch.tensor([col_pos1, line_pos1]), torch.tensor([col_pos2, line_pos2]), torch.tensor([col_pos3, line_pos3]), torch.tensor([col_pos4, line_pos4]),
-                           torch.tensor([col_pos5, line_pos5])]
+        line_pos2, col_pos2 = 0., 2.5
+        line_pos3, col_pos3 = 0., -2.5
+        list_source_pos = [torch.tensor([col_pos1, line_pos1]), torch.tensor([col_pos2, line_pos2]), torch.tensor([col_pos3, line_pos3])]
+        list_source_pos = [list_source_pos[0], list_source_pos[1]]
         colors = ['b-', 'g-', 'r-', 'k-', 'm-']
-
+        
         lens_group.compare_positions_trace(N, list_source_pos, max_angle, wavelength, colors=colors)
 
     elif usecase == 'compare_wavelength_trace':
@@ -230,17 +503,19 @@ if __name__ == '__main__':
         N = 2
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
 
         line_pos, col_pos = 0., 0.
-        source_pos = torch.tensor([col_pos, line_pos])
+        line_pos2, col_pos2 = 0., 2.5
+        list_source_pos = [torch.tensor([col_pos, line_pos]), torch.tensor([col_pos2, line_pos2])]
 
-        lens_group.compare_wavelength_trace(N, source_pos, max_angle, wavelengths, colors=colors)
+        lens_group.compare_wavelength_trace(N, list_source_pos, max_angle, wavelengths, colors=colors)
 
     elif usecase == 'render':
         wavelengths = torch.tensor(system_wavelengths).float().to(device)
+        wavelengths = torch.tensor([450., 520., 650.]).float().to(device)
 
-        nb_rays = 20
+        nb_rays = 1
 
         texture = np.kron([[1, 0] * 10, [0, 1] * 10] * 10, np.ones((25, 25)))[:,:,np.newaxis].repeat(len(wavelengths), axis=-1).astype(np.float32) # Checkboard with each square being 25x25 on a 500x500 size
         texture = np.ones((256, 256, len(wavelengths)), dtype=np.float32)
@@ -251,14 +526,21 @@ if __name__ == '__main__':
         texture = 1000*torch.tensor(texture).repeat_interleave(oversample).unsqueeze(0).unsqueeze(0).repeat(256, 256, 1).float().numpy()
         mask = np.zeros((256, 256), dtype=np.float32)
         mask[:, 128] = 1
-        texture = np.multiply(texture, mask[:,:,np.newaxis])      
+        texture = np.multiply(texture, mask[:,:,np.newaxis])
+        
+        texture = np.ones((512, 512, 3))
         
         texture = torch.from_numpy(texture).float().to(device)
 
+        #for i in range(lens_group.size_system):
+        #    lens_group.system[i].film_size = [800, 800]
+
         z0 = list_d_sensor[-1]
+        z0 = torch.tensor([lens_group.system[-1].d_sensor*np.cos(lens_group.system[-1].theta_y*np.pi/180) + lens_group.system[-1].origin[-1] + lens_group.system[-1].shift[-1]]).item()
+        print("z0: ", z0)
         #offsets = -d_R + d_x1
         image = lens_group.render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
-                        texture=texture, offsets=[0, 0, 0], aperture_reduction=1, plot=True)
+                        texture=texture, aperture_reduction=0.05, plot=True)
         
         torch.save(image, f'test_n{nb_rays}_ov{int(len(wavelengths)//28)}.pt')
 
@@ -281,47 +563,68 @@ if __name__ == '__main__':
             
             texture = torch.from_numpy(texture).float().to(device)
 
+
             z0 = list_d_sensor[-1]
             #offsets = -d_R + d_x1
             image = lens_group.render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
-                            texture=texture, offsets=[0, 0, 0], aperture_reduction=1, plot=False)
+                            texture=texture, offsets=[0, 0, 0], aperture_reduction=0.05, plot=False)
             
             torch.save(image, f'test_n{nb_rays}_ov{int(len(wavelengths)//28)}.pt')
     
     elif usecase == 'save_pos_render':
         wavelengths = torch.tensor(system_wavelengths).float().to(device)
-        nb_rays = 40
+        #wavelengths = torch.tensor([450., 520.0, 650.]).float().to(device)
+        nb_rays = 20
+
 
         texture = np.kron([[1, 0] * 8, [0, 1] * 8] * 8, np.ones((16, 16)))[:,:,np.newaxis].repeat(len(wavelengths), axis=-1).astype(np.float32) # Checkboard with each square being 16x16 on a 256x256 size
         texture = np.ones((int(list_film_size[0][0]), int(list_film_size[0][1]), len(wavelengths)), dtype=np.float32)
         texture = texture[:256,:256,0]
         texture = torch.from_numpy(texture).float().to(device)
 
-        z0 = list_d_sensor[-1]
+        #z0 = list_d_sensor[-1]
+        z0 = torch.tensor([lens_group.system[-1].d_sensor*np.cos(lens_group.system[-1].theta_y*np.pi/180) + lens_group.system[-1].origin[-1] + lens_group.system[-1].shift[-1]]).item()
         nb_squares = int(list_film_size[0][0])//32
         nb_squares = 8 
+        texture = torch.ones((256, 256, 3))
         
-        big_uv, big_mask = lens_group.save_pos_render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
-                          texture=texture, offsets=[0, 0, 0], aperture_reduction=4)
+        # big_uv, big_mask = lens_group.save_pos_render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
+        #                   texture=texture, aperture_reduction=0.05)
         
+        big_uv = torch.load("rays_singlemis.pt", map_location='cpu')
+        big_mask = torch.load("rays_valid_singlemis.pt", map_location='cpu')
+
         texture = np.kron([[1, 0] * nb_squares, [0, 1] * nb_squares] * nb_squares, np.ones((16, 16)))[:,:,np.newaxis].repeat(len(wavelengths), axis=-1).astype(np.float32) # Checkboard with each square being 16x16 on a 256x256 size
         texture = texture[:256,:256,:]
 
-        texture = scipy.io.loadmat("/home/lpaillet/Documents/Codes/simca/datasets_reconstruction/mst_datasets/cave_1024_28_train/scene1.mat")['img_expand'][100:356,300:556].astype('float32')
+        texture = scipy.io.loadmat("/home/lpaillet/Documents/Codes/simca/datasets_reconstruction/mst_datasets/cave_1024_28_train/scene109.mat")['img_expand'][:512,:512, :].astype('float32')
+        texture = torch.from_numpy(texture).float().unsqueeze(0)
+
+        print(texture.shape)
+        texture = torch.nn.functional.interpolate(texture, scale_factor=(1, oversample), mode='bilinear', align_corners=True)
+        # texture = [1 for i in range(4)] + [5] + [4] + [3 for i in range(7)] + [1 for i in range(5)] + [4 for i in range(10)]
+        # texture = 1000*torch.tensor(texture).repeat_interleave(4).unsqueeze(0).unsqueeze(0).repeat(256, 256, 1).float().numpy()
+        texture = texture.squeeze(0)
+        #mask = np.zeros((512, 512), dtype=np.float32)
+        #mask[:, 256] = 1
+        mask = torch.load("mask.pt", map_location='cpu')
+        texture = np.multiply(texture, mask[:,:,np.newaxis]) 
+        # texture = texture[:256,:256,:3]     
         
-        texture = [1 for i in range(4)] + [5] + [4] + [3 for i in range(7)] + [1 for i in range(5)] + [4 for i in range(10)]
-        texture = 1000*torch.tensor(texture).repeat_interleave(4).unsqueeze(0).unsqueeze(0).repeat(256, 256, 1).float().numpy()
-        mask = np.zeros((256, 256), dtype=np.float32)
-        mask[:, 128] = 1
-        texture = np.multiply(texture, mask[:,:,np.newaxis])      
-        
-        texture = torch.from_numpy(texture).float().to(device)
+        texture = torch.from_numpy(texture).float().to(device) if isinstance(texture, np.ndarray) else texture.float().to(device)
         #texture = np.zeros((int(list_film_size[0][0]), int(list_film_size[0][1]), len(wavelengths)), dtype=np.float32)
         #texture[:, texture.shape[0]//2, :] = 1
 
+        airy = torch.load("airy_single.pt", map_location='cpu')
+
         image = lens_group.render_based_on_saved_pos(big_uv = big_uv, big_mask = big_mask, texture = texture, nb_rays=nb_rays, wavelengths = wavelengths,
                                     z0=z0, plot = True)
-        torch.save(image, 'test.pt')
+        
+        airy = airy[::4, ...]
+        image = torch.nn.functional.conv2d(image.unsqueeze(0).permute(0, 3, 1, 2), airy.float(), padding = airy.shape[-1]//2, groups=wavelengths.shape[0]).squeeze()
+        image = image.permute(1, 2, 0)
+
+        torch.save(image, 'render_saved_pos_singlemis.pt')
 
     elif usecase == 'get_dispersion':
         wavelengths = torch.linspace(450, 650, 3)
@@ -342,7 +645,7 @@ if __name__ == '__main__':
         N = 58
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
         wavelength = 520.0
 
         line_pos, col_pos = 0., 0.
@@ -354,7 +657,7 @@ if __name__ == '__main__':
         N = 58
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
         kernel_size = 11
         wavelengths = system_wavelengths
 
@@ -388,7 +691,7 @@ if __name__ == '__main__':
         source_pos3 = torch.tensor([0., 2.5])
         source_pos4 = torch.tensor([2.5, 2.5])
         source_pos_list = [source_pos1, source_pos2, source_pos3, source_pos4]
-        w_list = [520.0, 450., 650.]
+        w_list = [450.0, 520., 650.]
 
         file_name = "/home/lpaillet/Documents/Codes/article-distorsions-dont-matter-data/data_zemax/AMICI/ray_positions_wavelength_W1_field_F1.h5"
 
@@ -438,19 +741,19 @@ if __name__ == '__main__':
         source_pos3 = torch.tensor([0., 2.5])
         source_pos4 = torch.tensor([2.5, 2.5])
         source_pos_list = [source_pos1, source_pos2, source_pos3, source_pos4]
-        w_list = [520.0, 450., 650.]
+        w_list = [450.0, 520., 650.]
 
-        file_name = "/home/lpaillet/Documents/Codes/article-distorsions-dont-matter-data/data_zemax/AMICI/ray_positions_wavelength_W1_field_F1.h5"
+        file_name = "/home/lpaillet/Documents/Codes/article-distorsions-dont-matter-data/data_zemax/single_prism_misaligned_5deg_delta_beta_c/ray_positions_wavelength_W1_field_F1.txt"
 
         depth_list = torch.from_numpy(np.arange(-2., 2., 0.01))
         angle_list = torch.from_numpy(np.arange(5, 50, 2))
         angle_list = torch.tensor([22.5])
-        depth_list = torch.tensor([0.0])
+        depth_list = torch.from_numpy(np.arange(-0.2, 0.2, 0.001))
 
         params = [[source_pos_list[i], w_list[j], extract_positions(file_name.replace('W1', f'W{j+1}').replace('F1', f'F{i+1}'))]
                   for i in range(len(source_pos_list)) for j in range(len(w_list))]
 
-        map = lens_group.fit_psf(N, params, depth_list, angle_list, start_dist, pixel_size, kernel_size = 11, show_psf=True)
+        map = lens_group.fit_psf(N, params, depth_list, angle_list, start_dist, pixel_size, kernel_size = 11, show_psf=False)
         torch.save(map, 'map_optim.pt')
         if map.shape[0] > 1 and map.shape[1] > 1:
             fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
@@ -468,22 +771,22 @@ if __name__ == '__main__':
         plt.show()
 
     elif usecase == 'compare_psf_zemax':
-        N = 30
+        N = 40
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
         wavelength = 520.0
 
-        pixel_size = 5e-3
+        pixel_size = 10e-3
 
         source_pos1 = torch.tensor([0., 0.])
         source_pos2 = torch.tensor([2.5, 0.])
         source_pos3 = torch.tensor([0., 2.5])
         source_pos4 = torch.tensor([2.5, 2.5])
         source_pos_list = [source_pos1, source_pos2, source_pos3, source_pos4]
-        w_list = [520.0, 450., 650.]
+        w_list = [450.0, 520., 650.]
 
-        file_name = "/home/lpaillet/Documents/Codes/article-distorsions-dont-matter-data/data_zemax/AMICI/ray_positions_wavelength_W1_field_F1.txt"
+        file_name = "/home/lpaillet/Documents/Codes/article-distorsions-dont-matter-data/data_zemax/single_prism_misaligned_5deg_delta_beta_c/ray_positions_wavelength_W1_field_F1.txt"
 
         params = [[source_pos_list[i], w_list[j], extract_positions(file_name.replace('W1', f'W{j+1}').replace('F1', f'F{i+1}'))]
                   for i in range(len(source_pos_list)) for j in range(len(w_list))]
@@ -495,7 +798,7 @@ if __name__ == '__main__':
         N = 58
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
 
         lim = 2.7
         nb_pts = 50
@@ -512,7 +815,7 @@ if __name__ == '__main__':
         N = 58
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
 
         database_size = 4000
         lim = 2.56
@@ -526,7 +829,7 @@ if __name__ == '__main__':
         N = 58
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
 
         lim = 2.7
         nb_pts = 50
@@ -542,7 +845,7 @@ if __name__ == '__main__':
     elif usecase == "view_psf_field":
         N = 58
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
         wavelength_list = [450., 520., 650.]
 
         depth_list = np.arange(-0.5, 0.51, 0.05)
@@ -558,7 +861,7 @@ if __name__ == '__main__':
         N = 58
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
 
         wavelength_list = [450., 520.0, 650.]
 
@@ -575,7 +878,7 @@ if __name__ == '__main__':
         N = 58
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
-        max_angle = 22.5
+        max_angle = 0.05*180/np.pi
 
         wavelength_list = [450., 500., 520.0, 600., 650.]
 
