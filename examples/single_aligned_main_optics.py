@@ -131,8 +131,24 @@ d_shift_value_break_z = 0.012*np.cos((d_tilt_angle_final_y)*np.pi/180).item() + 
 print("x: ", d_shift_value_x)
 d_shift_value_y = 0.0
 if __name__ == '__main__':
-
     #usecase is a string defining the example to run among the following:
+    # - 'spot': Plot the spot diagram for the lens group.
+    # - 'render_mapping': Render the acquisition and then use the mapping to create the 3D estimation.
+    # - 'spot_compare_zemax': Compare the spot diagram with Zemax.
+    # - 'mapping': Create the mapping cube for the system.
+    # - 'compare_positions_trace': Plot the path of the rays coming from different positions in the object plane for a given wavelength.
+    # - 'compare_wavelength_trace': Plot the path of the rays coming from different (or only one) positions in the object plane for several wavelengths.
+    # - 'render': Render the acquisition for a given scene.
+    # - 'render_lots': Render the acquisition for a given scene with different number of rays.
+    # - 'save_pos_render': Save the positions on the detector of traced rays from the scene.
+    # - 'save_pos_render_all': Save the positions on the detector of traced rays from the scene, with another method.
+    # - 'get_dispersion': Get the dispersion of the system and some tests.
+    # - 'psf': Plot the PSF for the lens group.
+    # - 'psf_line': Plot the PSF for the lens group for a line of sources.
+    # - 'optimize_adam_psf_zemax': Automatically optimize the distance of the sensor and the angle of the system to match Zemax system
+    # - 'optimize_psf_zemax': Manually optimize the distance of the sensor and the angle of the system to match Zemax system.
+    # - 'compare_psf_zemax': Compare the PSF of the system with Zemax.
+    
     usecase = 'compare_psf_zemax'
     
     oversample = 10
