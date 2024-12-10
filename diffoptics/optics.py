@@ -970,7 +970,7 @@ class Lensgroup(Endpoint):
         valid = torch.ones(ray.o[..., 2].shape, device=self.device).bool()
         return valid, ray
     
-    def sample_ray_sensor(self, wavelength, offset=np.zeros(2), aperture_reduction = 1):
+    def sample_ray_sensor(self, wavelength, offset=np.zeros(2), numerical_aperture = 0.05):
         """
         Sample rays on the sensor plane.
         """
@@ -987,7 +987,7 @@ class Lensgroup(Endpoint):
         wav = wavelength * np.ones(N)
         
         # sample ray
-        valid, ray = self._sample_ray_render(N, wav, sample2, sample3, offset, aperture_angle=aperture_reduction)
+        valid, ray = self._sample_ray_render(N, wav, sample2, sample3, offset, aperture_angle=numerical_aperture)
         # print("Rendered ray: ", ray)
         ray_new = self.to_world.transform_ray(ray)
         #ray_new = self.mts_Rt.transform_ray(ray)

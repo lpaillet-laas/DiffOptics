@@ -125,40 +125,15 @@ d_tilt_angle_final *= 1
 d_shift_value_x = -0.353*0.1 - 0.0015
 d_shift_value_y = 0.0
 if __name__ == '__main__':
-    adjustment = 2.56
 
-    usecase = 'compare_positions_trace'
-    usecase = 'compare_wavelength_trace'
+    #usecase is a string defining the example to run among the following:
     usecase = 'compare_psf_zemax'
-    #usecase = 'save_pos_render'
-    #usecase = 'optimize_psf_zemax'
-    #usecase = 'get_dispersion'
-    #usecase = 'render'
-    #usecase = 'psf_line'
-    #usecase = 'kfk'
-    #usecase = 'render_lots'
-    #usecase = 'spot_compare_zemax'
-    #usecase = 'spot'
-    #usecase = 'compare_psf_zemax'
-    #usecase = 'compare_positions_trace_back'
-
-    #usecase = 'render_line'
-    #usecase = 'psf'
-    #usecase = 'save_pos_render_all'
-    #usecase = "mapping"
-    #usecase = "render_mapping"
-    #usecase = "save_pos_render"
-    #usecase = "psf_line"
-    #usecase = "compare_wavelength_trace"
-
-    #usecase = 'kfk'
 
     oversample = 4
     
     d_last_surface_distance = 2*d_F + d_back_F +  d_prism_length
     d_center_prism = 2*d_F + d_back_F + d_prism_length/2
 
-    #optimized_lens_shift = - 0.42
     optimized_lens_shift = 0.2 + 0.165
     list_d_sensor = [2*d_F + d_back_F,
                      d_prism_length + d_back_F,
@@ -166,7 +141,6 @@ if __name__ == '__main__':
     list_r_last = [d_R_prism, d_R_prism, d_R_prism]
 
     list_film_size = [[612, 512] for i in range(3)] # Pixel x, Pixel y
-    list_pixel_size = [1/adjustment*80.0e-3]*3
     list_pixel_size = [10e-3]*3
     list_theta_y = [0., 0., d_tilt_angle_final]
     list_theta_x = [0., angle_misalign_prism, 0.]
@@ -182,7 +156,7 @@ if __name__ == '__main__':
                         wavelengths = system_wavelengths,
                         device=device, save_dir="../system_comparison_with_zemax/amici/images/")
 
-    lens_group.export_system("system.yml")
+    lens_group.export_system("system_amici.yml")
     #lens_group.d_subsystems = torch.tensor([0, 0, 0])
     #lens_group.update_system()
     #lens_group.system = [lens_group.system[0]]
@@ -197,40 +171,16 @@ if __name__ == '__main__':
 
     
     if usecase == 'spot':
+        """
+        Plot the spot diagram for the lens group.
+        """
         wavelengths = torch.tensor([450, 550, 650])
         lens_group.plot_spot_less_points(400, 20*1e-3, wavelengths = wavelengths)
-    elif usecase == 'test':
-        N = 10
-        wavelength = torch.tensor([520.0])
-        x_pos, y_pos, z_pos = 0., 0., 0.
-        angle = torch.tensor([22.5], requires_grad=True)
-        
-        #lens.d_sensor = torch.tensor([lens.d_sensor], requires_grad=True)
-        lens_group.system[-1].d_sensor = torch.tensor([lens_group.system[-1].d_sensor], requires_grad=True)
-        #lens.plot_setup2D()
-        
-        optimizer = torch.optim.Adam([lens_group.system[-1].d_sensor, angle], lr=1e-1)
-        for i in range(100):
-            optimizer.zero_grad()
 
-            d = lens_group.extract_hexapolar_dir(N, torch.tensor([0., 0.]), angle)
-            
-            ps = lens_group.trace_psf_from_point_source(angles=[[0, 0]], x_pos=0, y_pos=0, z_pos=0, wavelength = wavelength,
-                 show_rays = False, d = d, ignore_invalid = False, show_res = False)
-            loss = -(torch.max(ps[...,0]) - torch.min(ps[...,0]))
-            print("Loss: ", loss)
-            loss.backward()
-            optimizer.step()
-            print("Angle: ", angle.clone().detach())
-            print("Dist capteur: ", lens_group.system[-1].d_sensor.clone().detach())
-            print("")
-
-    elif usecase == 'spot_compare':
-        lens_group.compare_spot(169, 25e-3, opposite = [True, False], shift = [-0.014, 0.],
-                                path_compare='/home/lpaillet/Documents/Codes/article-distorsions-dont-matter-data/data_zemax/amici_prism_aligned/', model = 'zemax')
-    
     elif usecase == 'render_mapping':
-        #wavelengths = torch.tensor([450., 520.0, 650., 700., 800.]).float().to(device)
+        """
+        Render the acquisition and then use the mapping to create the 3D estimation.
+        """
         wavelengths = torch.linspace(450, 650, 28).float()
         wavelengths = torch.Tensor([450., 520.0, 650.]).float()
         nb_rays = 1
@@ -245,7 +195,7 @@ if __name__ == '__main__':
         mapping_cube = torch.load('mapping_cube_simple_amici.pt', map_location='cpu').int()
         
         image = lens_group.render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
-                        texture=texture, aperture_reduction=0.05, plot=False)
+                        texture=texture, numerical_aperture=0.05, plot=False)
         
         image = image.permute(2, 0, 1)
         image = image.unsqueeze(0)
@@ -282,22 +232,26 @@ if __name__ == '__main__':
         plt.show()
 
     elif usecase == 'spot_compare_zemax':
+        """
+        Compare the spot diagram with Zemax.
+        """
         lens_group.compare_spot_zemax(path_compare='/home/lpaillet/Documents/Codes/article-distorsions-dont-matter-data/data_zemax/amici_prism_aligned/')
 
     elif usecase == 'mapping':
+        """
+        Create the mapping cube for the system.
+        """
         wavelengths = torch.tensor(system_wavelengths).float().to(device)
-        wavelengths = torch.tensor([450., 520.0, 650.]).float().to(device)
 
-        #for i in range(lens_group.size_system):
-        #    lens_group.system[i].film_size = [800, 600]  
 
         mapping_cube = lens_group.get_mapping_scene_detector(wavelengths, shape_scene = [512, 512])
-        print(f"Min x: {torch.min(mapping_cube[..., 0])}, Max x: {torch.max(mapping_cube[..., 0])}")
-        print(f"Min y: {torch.min(mapping_cube[..., 1])}, Max y: {torch.max(mapping_cube[..., 1])}")
 
         torch.save(mapping_cube, 'mapping_cube_amici.pt')
 
     elif usecase == 'compare_positions_trace':
+        """
+        Plot the path of the rays coming from different positions in the object plane for a given wavelength.
+        """
         N = 2
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
@@ -314,6 +268,9 @@ if __name__ == '__main__':
         lens_group.compare_positions_trace(N, list_source_pos, max_angle, wavelength, colors=colors)
     
     elif usecase == 'compare_wavelength_trace':
+        """
+        Plot the path of the rays coming from different (or only one) positions in the object plane for several wavelengths.
+        """
         wavelengths = [450., 520., 650.]
         colors = ['b', 'lime', 'r']
         N = 2
@@ -328,167 +285,10 @@ if __name__ == '__main__':
 
         lens_group.compare_wavelength_trace(N, list_source_pos, max_angle, wavelengths, colors=colors, linewidth=1.2)
 
-
-    elif usecase == 'compare_positions_trace_back':
-        for i, lens in enumerate(lens_group.system[::-1]):
-            lens_mts_R, lens_mts_t = lens._compute_transformation().R, lens._compute_transformation().t
-            if i > 0:
-                lens_group.prepare_mts(-i-1, lens.pixel_size, lens.film_size, start_distance = max_z, R=lens_mts_R, t=lens_mts_t)
-            else:
-                max_z = lens.d_sensor*np.cos(lens.theta_y*np.pi/180).item() + lens.origin[-1] + lens.shift[-1] # Last z coordinate in absolute coordinates
-                lens_group.prepare_mts(-1, lens.pixel_size, lens.film_size, start_distance = max_z, R=lens_mts_R, t=lens_mts_t)    
-        
-        lens_group.combined_plot_setup(with_sensor=False)
-        lens_group.system = lens_group.system[::-1]
-        lens_group.system[0].film_size[0] = 2
-        lens_group.system[0].film_size[1] = 2
-        lens_group.system[0].pixel_size = 2
-
-        def sample_ray_sensor(lens, wavelength, offset=np.zeros(2), aperture_reduction = 1):
-            """
-            Sample rays on the sensor plane.
-            """
-            if not lens.mts_prepared:
-                raise Exception('MTS unprepared; please call `prepare_mts()` first!')
-            
-            N = np.prod(lens.film_size)
-            
-            # sensor and aperture plane samplings
-            sample2 = lens._generate_sensor_samples()
-            sample3 = lens._generate_aperture_samples()
-            sample3 = sample3 / aperture_reduction
-
-            # wavelength [nm]
-            wav = wavelength * np.ones(N)
-            
-            # sample ray
-            valid, ray, oss = _sample_ray_render(lens, N, wav, sample2, sample3, offset)
-            # print("Rendered ray: ", ray)
-            ray_new = lens.to_world.transform_ray(ray)
-            #ray_new = self.mts_Rt.transform_ray(ray)
-
-            return valid, ray_new, oss
-        def normalize(d):
-            return d / torch.sqrt(torch.sum(d**2, axis=-1))[..., None]
-        
-        def _sample_ray_render(lens, N, wav, sample2, sample3, offset):
-            """
-            `offset`: sensor position offsets [mm].
-            """
-
-            # sample2 \in [ 0, 1]^2
-            # sample3 \in [-1, 1]^2
-            if not lens.mts_prepared:
-                raise Exception('MTS unprepared; please call `prepare_mts()` first!')
-            
-            # normalized to [-0,5, 0.5]
-            sample2 = sample2 - 0.5
-            
-            # sample sensor and aperture planes
-            p_sensor = sample2 * np.array([
-                lens.pixel_size * lens.film_size[0], lens.pixel_size * lens.film_size[1]
-            ])[None,:]
-
-            # perturb sensor position by half pixel size
-            p_sensor = p_sensor + (np.random.rand(*p_sensor.shape) - 0.5) * lens.pixel_size
-
-            # offset sensor positions
-            p_sensor = p_sensor + offset
-
-            # aperture samples (last surface plane)
-            p_aperture = sample3 * lens.aperture_radius
-            d_xy = p_aperture - p_sensor
-
-            # construct ray
-            #o = torch.Tensor(np.hstack((p_sensor, np.zeros((N,1)))).reshape((N,3)))
-            d_sensor = lens.d_sensor.item() if isinstance(lens.d_sensor, np.ndarray) or isinstance(lens.d_sensor, torch.Tensor) else lens.d_sensor
-            o = torch.Tensor(np.hstack((p_sensor, np.zeros((N,1)) + d_sensor)).reshape((N,3)))
-            d = torch.Tensor(np.hstack((d_xy, lens.aperture_distance.item() * np.ones((N,1)))).reshape((N,3)))
-            d = normalize(d)
-            wavelength = torch.Tensor(wav).float()
-            created_ray = do.Ray(o, d, wavelength, device=lens.device)
-            # trace        
-            valid, ray, oss = lens._trace(created_ray, record = True)
-            return valid, ray, oss
-        
-        def render_single_back(lens_group, wavelength, screen, aperture_reduction = 1):
-            # Sample rays from the sensor
-            ####valid, ray_mid = self.system[-1].sample_ray_sensor(wavelength.item(), aperture_reduction = aperture_reduction)
-            oss_list = [0 for i in range(len(lens_group.system))]
-            valid, ray_mid, oss = sample_ray_sensor(lens_group.system[0], wavelength.item(), aperture_reduction = aperture_reduction)
-            oss_list[0] = oss
-            # ray_mid.o = ray_mid.o[valid, :]
-            # ray_mid.d = ray_mid.d[valid, :]
-            # print("Ray 1: ", ray_mid)
-            print("Nb valid 1: ", torch.sum(valid))
-            # Trace rays through each lens in the system
-            
-            ####for lens in self.system[::-1][1:-1]:
-            for i, lens in enumerate(lens_group.system[1:-1]):
-                ray_mid = lens.to_object.transform_ray(ray_mid)
-                valid_1, ray_mid, oss = lens._trace(ray_mid, record=True)
-                oss_list[i+1] = oss
-                #ray_mid.o = ray_mid.o[valid_1, :]
-                #ray_mid.d = ray_mid.d[valid_1, :]
-                #ray_mid = lens.mts_Rt.transform_ray(ray_mid)
-                ray_mid = lens.to_world.transform_ray(ray_mid)
-                #print(f"Ray mid: ", ray_mid)
-                print("Nb valid mid: ", torch.sum(valid_1))
-                valid = valid & valid_1
-                
-            # Trace rays to the first lens
-            ####ray_mid = self.system[0].to_object.transform_ray(ray_mid)
-            ray_mid = lens_group.system[-1].to_object.transform_ray(ray_mid)
-            ####valid_last, ray_last = self.system[0]._trace(ray_mid)
-            valid_last, ray_last, oss = lens_group.system[-1]._trace(ray_mid, record = True)
-            oss_list[-1] = oss
-            print("Nb valid last: ", torch.sum(valid_last))
-            valid_last = valid & valid_last
-            #print("Ray last before transform: ", ray_last)
-
-            #ray_last = self.system[0].mts_Rt.transform_ray(ray_last)
-            ####ray_last = self.system[0].to_world.transform_ray(ray_last)
-            ray_last = lens_group.system[-1].to_world.transform_ray(ray_last)
-            #print("Ray last: ", ray_last)
-            
-            I = mask = None
-            """ # Intersect rays with the screen
-            uv, valid_screen = screen.intersect(ray_last)[1:]
-            # Apply mask to filter out invalid rays
-            mask = valid_last & valid_screen
-            
-            # Calculate intensity values on the screen
-            I = screen.shading(uv, mask) """
-            
-            return I, mask, oss_list
-
-        I, mask, oss_list = render_single_back(lens_group, torch.tensor([520.]), None)
-
-        for i, oss in enumerate(oss_list):
-            for os in oss:
-                for o in os:
-                    os = lens_group.system[i].to_world.transform_point(torch.Tensor(np.asarray(os))).cpu().detach().numpy()
-
-        ax, fig = lens_group.plot_setup_with_rays(oss_list, ax=None, fig=None, show=False)
-        plt.show()
-
-
-
-    elif usecase == 'compare_wavelength_trace':
-        wavelengths = [450., 520., 650.]
-        colors = ['b-', 'g-', 'r-']
-        N = 2
-        nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
-        print(f"Nb rays: {nb_ray}")
-        max_angle = 0.05*180/np.pi
-
-        line_pos, col_pos = 0., 0.
-        line_pos2, col_pos2 = 0., 2.5
-        list_source_pos = [torch.tensor([col_pos, line_pos]), torch.tensor([col_pos2, line_pos2])]
-
-        lens_group.compare_wavelength_trace(N, list_source_pos, max_angle, wavelengths, colors=colors)
-
     elif usecase == 'render':
+        """
+        Render the acquisition for a given scene.
+        """
         wavelengths = torch.tensor(system_wavelengths).float().to(device)
         wavelengths = torch.tensor([450., 520., 650.])
         lens_group.wavelengths = wavelengths
@@ -510,43 +310,19 @@ if __name__ == '__main__':
 
         texture = np.ones((512, 512, 3), dtype=np.float32)
 
-        #for i in range(lens_group.size_system):
-        #    lens_group.system[i].film_size = [612, 612]
 
         texture = torch.from_numpy(texture).float().to(device)
         z0 = list_d_sensor[-1]
         z0 = torch.tensor([lens_group.system[-1].d_sensor*torch.cos(lens_group.system[-1].theta_y*np.pi/180).item() + lens_group.system[-1].origin[-1] + lens_group.system[-1].shift[-1]]).cpu().detach().item()
-        print("z0: ", z0)
-        #offsets = -d_R + d_x1
         image = lens_group.render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
-                        texture=texture, offsets=[0, 0, 0], aperture_reduction=0.05, plot=True)
+                        texture=texture, offsets=[0, 0, 0], numerical_aperture=0.05, plot=True)
         
         torch.save(image, f'test_n{nb_rays}_ov{int(len(wavelengths)//28)}.pt')
-        
-    elif usecase == 'render_line':
-        system_wavelengths = [450., 520., 650.]
-        lens_group.wavelengths = system_wavelengths
-        wavelengths = torch.tensor(system_wavelengths).float().to(device)
-
-        nb_rays = 10
-
-        texture = torch.zeros((60, 256, 3))
-        for i in range(9):
-            texture[15, i*30, :] = 1
-        
-        for i in range(lens_group.size_system):
-            lens_group.system[i].film_size = [60, 256]
-
-        texture = texture.float().to(device)
-
-        z0 = list_d_sensor[-1]
-        z0 = torch.tensor([lens_group.system[-1].d_sensor*torch.cos(lens_group.system[-1].theta_y*np.pi/180).item() + lens_group.system[-1].origin[-1]  + lens_group.system[-1].shift[-1]]).cpu().detach().item()
-        print("z0: ", z0)
-        #offsets = -d_R + d_x1
-        image = lens_group.render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
-                        texture=texture, offsets=[0, 0, 0], aperture_reduction=0.05, plot=True)
 
     elif usecase == 'render_lots':
+        """
+        Render the acquisition for a given scene with different number of rays.
+        """
         wavelengths = torch.tensor(system_wavelengths).float().to(device)
 
         for n in range(1,21):
@@ -568,11 +344,14 @@ if __name__ == '__main__':
             z0 = list_d_sensor[-1]
             #offsets = -d_R + d_x1
             image = lens_group.render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
-                            texture=texture, offsets=[0, 0, 0], aperture_reduction=0.05, plot=False)
+                            texture=texture, offsets=[0, 0, 0], numerical_aperture=0.05, plot=False)
             
             torch.save(image, f'test_n{nb_rays}_ov{int(len(wavelengths)//28)}.pt')
     
     elif usecase == 'save_pos_render':
+        """
+        Save the positions on the detector of traced rays from the scene.
+        """
         wavelengths = torch.tensor(system_wavelengths).float().to(device)
         #wavelengths = torch.tensor([450., 520., 650.])
 
@@ -591,7 +370,7 @@ if __name__ == '__main__':
         texture = np.ones((256, 256, len(wavelengths)), dtype=np.float32)
         
         #big_uv, big_mask = lens_group.save_pos_render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
-        #                  texture=texture, offsets=[0, 0, 0], aperture_reduction=0.05)
+        #                  texture=texture, offsets=[0, 0, 0], numerical_aperture=0.05)
         
         big_uv = torch.load("rays_amici_07_10.pt", map_location='cpu')
         big_mask = torch.load("rays_valid_amici_07_10.pt", map_location='cpu')
@@ -627,6 +406,9 @@ if __name__ == '__main__':
         torch.save(image, 'render_saved_pos_amici.pt')
 
     elif usecase == 'save_pos_render_all':
+        """
+        Save the positions on the detector of traced rays from the scene, with another method.
+        """
         wavelengths = torch.tensor([450., 520., 650.])
 
         nb_rays = 20
@@ -638,7 +420,7 @@ if __name__ == '__main__':
         texture = np.ones((256, 256, len(wavelengths)), dtype=np.float32)
         
         big_uv, big_mask = lens_group.save_pos_render(wavelengths=wavelengths, nb_rays=nb_rays, z0=z0,
-                          texture=texture, offsets=[0, 0, 0], aperture_reduction=0.05)
+                          texture=texture, offsets=[0, 0, 0], numerical_aperture=0.05)
         
         texture = [1 for i in range(4)] + [5] + [4] + [3 for i in range(7)] + [1 for i in range(5)] + [4 for i in range(10)]
         texture = 1000*torch.tensor(texture).repeat_interleave(4).unsqueeze(0).unsqueeze(0).repeat(256, 256, 1).float().numpy()
@@ -657,6 +439,9 @@ if __name__ == '__main__':
         torch.save(image, 'test.pt')
 
     elif usecase == 'get_dispersion':
+        """
+        Get the dispersion of the system and some tests.
+        """
         wavelengths = torch.linspace(450, 650, 3)
         pos_dispersed, pixel_dispersed = lens_group.central_positions_wavelengths(wavelengths)
         rounded_pixel = pixel_dispersed.round().int()
@@ -672,7 +457,10 @@ if __name__ == '__main__':
         print(fake_cube[:,-1])
 
     elif usecase == 'psf':
-        N = 58
+        """
+        Plot the PSF for the lens group.
+        """
+        N = 58 # Number of hexapolar circles
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
         max_angle = 0.05*180/np.pi
@@ -685,6 +473,9 @@ if __name__ == '__main__':
         ps = lens_group.plot_psf(N, source_pos, max_angle, wavelength, show_rays = False, show_res = False)
     
     elif usecase == 'psf_line':
+        """
+        Plot the PSF for the lens group for a line of sources.
+        """
         N = 58
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")
@@ -721,6 +512,9 @@ if __name__ == '__main__':
         torch.save(psf_line, 'psf_line_amici.pt')        
         
     elif usecase == 'optimize_adam_psf_zemax':
+        """
+        Automatically optimize the distance of the sensor and the angle of the system to match the PSF of Zemax.
+        """
         n_iter = 100
         start_dist = lens_group.system[-1].d_sensor
         N = 20
@@ -772,6 +566,9 @@ if __name__ == '__main__':
             print("")
             
     elif usecase == 'optimize_psf_zemax':
+        """
+        Manually optimize the distance of the sensor and the angle of the systems to match the PSF of Zemax.
+        """
         start_dist = lens_group.system[-1].d_sensor
         N = 30
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
@@ -812,6 +609,9 @@ if __name__ == '__main__':
         plt.show()
 
     elif usecase == 'compare_psf_zemax':
+        """
+        Compare the PSF of the system with Zemax.
+        """
         N = 40
         nb_ray = 1 + 3*N*(N-1) # Hexapolar number of rays based on N
         print(f"Nb rays: {nb_ray}")

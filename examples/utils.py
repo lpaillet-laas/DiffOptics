@@ -203,7 +203,7 @@ def prepare_mts(lens, pixel_size, film_size, R=np.eye(3), t=np.zeros(3), start_d
     lens.mts_prepared = True
     lens.d_sensor = 0
 
-def render_single_back(lenses, wavelength, screen, aperture_reduction = 1):
+def render_single_back(lenses, wavelength, screen, numerical_aperture = 0.05):
     """
     Renders back propagation of single ray through a series of lenses onto a screen.
 
@@ -216,7 +216,7 @@ def render_single_back(lenses, wavelength, screen, aperture_reduction = 1):
         tuple: A tuple containing the intensity values (I) and the mask indicating valid pixels on the screen.
     """
     # Sample rays from the sensor
-    valid_1, ray_mid = lenses[-1].sample_ray_sensor(wavelength, aperture_reduction = aperture_reduction)
+    valid_1, ray_mid = lenses[-1].sample_ray_sensor(wavelength, numerical_aperture = numerical_aperture)
     ray_mid.o = ray_mid.o[valid_1, :]
     ray_mid.d = ray_mid.d[valid_1, :]
     
@@ -289,7 +289,7 @@ def plot_setup_with_rays(lenses, oss):
 
 
 def propagate(lenses, texture = None, nb_rays=20, wavelengths = [656.2725, 587.5618, 486.1327], z0=0, offsets=None,
-                aperture_reduction = 1, save_dir = None, plot = False):
+                numerical_aperture = 0.05, save_dir = None, plot = False):
     
     """
     Perform ray tracing simulation for propagating light through a lens system. Renders the texture on a screen
@@ -358,7 +358,7 @@ def propagate(lenses, texture = None, nb_rays=20, wavelengths = [656.2725, 587.5
         I = 0
         M = 0
         for i in tqdm(range(ray_counts_per_pixel)):
-            I_current, mask = render_single_back(lenses, wavelength, screen, aperture_reduction=aperture_reduction)
+            I_current, mask = render_single_back(lenses, wavelength, screen, numerical_aperture=numerical_aperture)
             I = I + I_current
             M = M + mask
         I = I / (M + 1e-10)

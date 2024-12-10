@@ -37,12 +37,10 @@ class Screen(Endpoint):
         self.halfsize  = self.size/2                # screen half-dimension [mm]
         self.texture_shift = torch.zeros(2)         # screen image shift [mm]
         self.device = device
-        if len(texture.shape) == 2:
+        if len(texture.shape) == 2 or len(texture.shape) == 3:
             self.update_texture(texture)
-        elif len(texture.shape) == 3:
-            self.update_texture_batch(texture)
         elif len(texture.shape) == 4:
-            self.update_texture_all(texture)
+            self.update_texture_batch(texture)
         Endpoint.__init__(self, transformation, device)
         self.to(device)
 

@@ -31,27 +31,21 @@ oversample = 4
 
 mask = torch.load("/home/lpaillet/Documents/Codes/DiffOptics/examples/mask.pt", map_location='cpu')
 
-#texture = scipy.io.loadmat("/home/lpaillet/Documents/Codes/simca/datasets_reconstruction/mst_datasets/cave_1024_28_train/scene109.mat")['img_expand'][:512,:512].astype('float32')
+#texture = scipy.io.loadmat("/home/lpaillet/Documents/Codes/simca/datasets_reconstruction/mst_datasets/cave_1024_28_train/scene109.mat")['img_expand'][:512,:512].astype('float32')  # CAVE image
 
-""" for i in range(1,11):
-    texture = scipy.io.loadmat(f"/home/lpaillet/Documents/Codes/simca/datasets_reconstruction/mst_datasets/TSA_simu_data/Truth/scene{i:02d}.mat")['img'][:512,:512].astype('float32')
-    plt.imshow(texture.sum(-1))
-    plt.show() """
-
-texture = scipy.io.loadmat("/home/lpaillet/Documents/Codes/simca/datasets_reconstruction/mst_datasets/TSA_simu_data/Truth/scene07.mat")['img'][:512,:512].astype('float32')
+texture = scipy.io.loadmat("/home/lpaillet/Documents/Codes/simca/datasets_reconstruction/mst_datasets/TSA_simu_data/Truth/scene07.mat")['img'][:256,:256].astype('float32')  # KAIST image 
 
 
 texture = torch.from_numpy(np.transpose(texture, (2,0,1))).float()
 
 batch = texture.unsqueeze(0)
 
-batch = torch.clamp(torch.nn.functional.interpolate(batch, scale_factor=(2, 2), mode='bilinear', align_corners=True), 0, 1)
+batch = torch.clamp(torch.nn.functional.interpolate(batch, scale_factor=(2, 2), mode='bilinear', align_corners=True), 0, 1) # Needed for KAIST image as it is only 256x256
 
 texture = batch.permute(0, 2, 3, 1) # batchsize x H x W x nC
 
 texture = torch.mul(texture, mask[None, :, :, None])
 
-#texture_oversampled = torch.nn.functional.interpolate(texture, scale_factor=(1, self.oversample), mode='bilinear', align_corners=True)
 texture = torch.nn.functional.interpolate(texture, scale_factor=(1, oversample), mode='bilinear', align_corners=True)
 
 
@@ -87,7 +81,6 @@ for system_file, system in zip(systems_files, systems):
     plt.margins(0,0)
     plt.gca().xaxis.set_major_locator(plt.NullLocator())
     plt.gca().yaxis.set_major_locator(plt.NullLocator())
-    #plt.imshow(image.sum(-1), cmap='gray')
     plt.imshow(batch_acq, cmap=custom_gray_cmap)
     plt.savefig("/home/lpaillet/Documents/Codes/DiffOptics/system_comparison_with_zemax/" + f"acquisition_{system}.svg", format='svg', bbox_inches = 'tight', pad_inches = 0)
     plt.close()

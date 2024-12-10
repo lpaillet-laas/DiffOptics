@@ -26,7 +26,26 @@ class HSSystem:
                  save_dir = None, 
                  config_file_path = None):
         """
-        save_dir (str, optional): Directory to save the rendered images. Defaults to None.
+        Main class for handling the CASSI optical system.
+        Arguments are either provided directly or through a configuration file.
+        
+        Args:
+            list_systems_surfaces (list[list[dict]], optional): List of lists of dictionaries representing the surfaces of each lens group. Defaults to None.
+            list_systems_materials (list[list[str]], optional): List of lists of the names of the desired materials for each lens group. Defaults to None.
+            list_d_sensor (list[float], optional): List of distances from the origin to the sensor for each lens group. Defaults to None.
+            list_r_last (list[float], optional): List of radii of the last surface for each lens group. Defaults to None.
+            list_film_size (list[tuple[int, int]], optional): List of number of pixels of the sensor in x, y coordinates for each lens group. Defaults to None.
+            list_pixel_size (list[float], optional): List of pixel sizes of the sensor for each lens group. Defaults to None.
+            list_theta_x (list[float], optional): List of rotation angles (in degrees) along the x axis for each lens group. Defaults to None.
+            list_theta_y (list[float], optional): List of rotation angles (in degrees) along the y axis for each lens group. Defaults to None.
+            list_theta_z (list[float], optional): List of rotation angles (in degrees) along the z axis for each lens group. Defaults to None.
+            list_origin (list[tuple[float, float, float]], optional): List of origin positions in x, y, z coordinates for each lens group. Defaults to None.
+            list_shift (list[tuple[float, float, float]], optional): List of shifts of the lens groups relative to the origin in x, y, z coordinates. Defaults to None.
+            list_rotation_order (list[str], optional): List of operation orders for the computation of rotation matrices for each lens group. Defaults to None.
+            wavelengths (torch.Tensor, optional): Considered wavelengths for the usage of the system. Defaults to None.
+            device (str, optional): Device to use for the computations. Defaults to 'cuda'.
+            save_dir (str, optional): Directory to save the results. Defaults to None.
+            config_file_path (str, optional): Path to a configuration file. Defaults to None.
         """
         if config_file_path is not None:
             self.import_system(config_file_path)
@@ -80,6 +99,7 @@ class HSSystem:
             theta_z (float, optional): Rotation angle (in degrees) along the z axis for the entire lens group. Defaults to 0.
             origin (tuple[float, float, float], optional): Origin position in x, y, z coordinates. Defaults to (0, 0, 0).
             shift (tuple[float, float, float], optional): Shift of the lens group relative to the origin, in x, y, z coordinates. Defaults to (0, 0, 0).
+            rotation_order (str, optional): Operation order for the computation of rotation matrices. Defaults to 'xyz'.
 
         Returns:
             Lensgroup: Lens group object representing the created lens group.
@@ -227,6 +247,12 @@ class HSSystem:
     def export_system(self, filepath = "system.yml"):
         """
         Export the system to a YAML file.
+
+        Args:
+            filepath (str, optional): The path to the YAML file. Defaults to "system.yml".
+        
+        Returns:
+            None
         """
         system_dict = {}
         system_dict['systems_surfaces'] = list(self.systems_surfaces)
@@ -251,6 +277,11 @@ class HSSystem:
     def import_system(self, filepath = "./system.yml"):
         """
         Import the system from a YAML file.
+
+        Args:
+            filepath (str, optional): The path to the YAML file. Defaults to "./system.yml".
+        Returns:
+            None
         """
         with open(filepath, 'r') as file:
             system_dict = yaml.safe_load(file)
@@ -272,6 +303,15 @@ class HSSystem:
         self.save_dir = system_dict['save_dir']
 
     def update_system(self, d_subsystems=None):
+        """
+        Update the system with the provided distances between the subsystems.
+
+        Args:
+            d_subsystems (torch.Tensor, optional): The distances between the subsystems. Defaults to None.
+        
+        Returns:
+            list[Lensgroup]: The updated system.
+        """
         if d_subsystems is None:
             d_subsystems = self.d_subsystems
         
@@ -399,20 +439,21 @@ class HSSystem:
         lens.update()
         self.system[lens_id] = lens
 
-    def render_single_back(self, wavelength, screen, aperture_reduction = 1):
+    def render_single_back(self, wavelength, screen, numerical_aperture = 0.05):
         """
         Renders back propagation of single ray through a series of lenses onto a screen.
 
         Args:
             wavelength (float): The wavelength of the light.
             screen (object): The screen object onto which the light is projected.
+            numerical_aperture (float, optional): The numerical aperture of the system. Defaults to 0.05.
 
         Returns:
             tuple: A tuple containing the intensity values (I) and the mask indicating valid pixels on the screen.
         """
         # Sample rays from the sensor
-        ####valid, ray_mid = self.system[-1].sample_ray_sensor(wavelength.item(), aperture_reduction = aperture_reduction)
-        valid, ray_mid = self.system[0].sample_ray_sensor(wavelength.item(), aperture_reduction = aperture_reduction)
+        ####valid, ray_mid = self.system[-1].sample_ray_sensor(wavelength.item(), numerical_aperture = numerical_aperture)
+        valid, ray_mid = self.system[0].sample_ray_sensor(wavelength.item(), numerical_aperture = numerical_aperture)
         # ray_mid.o = ray_mid.o[valid, :]
         # ray_mid.d = ray_mid.d[valid, :]
         #print("Ray 1: ", ray_mid)
@@ -455,57 +496,22 @@ class HSSystem:
         I = screen.shading(uv, mask)
         
         return I, mask
-    
-    # def render_single_back_save_pos(self, wavelength, screen, aperture_reduction = 1):
-    #     """
-    #     Renders back propagation of single ray through a series of lenses onto a screen. Used to save the positions of the resulting rays.
 
-    #     Args:
-    #         wavelength (float): The wavelength of the light.
-    #         screen (object): The screen object onto which the light is projected.
-
-    #     Returns:
-    #         tuple: A tuple containing the rays positions (uv) and the mask indicating valid pixels on the screen.
-    #     """
-    #     # Sample rays from the sensor
-    #     valid, ray_mid = self.system[-1].sample_ray_sensor(wavelength.item(), aperture_reduction = aperture_reduction)
-    #     #ray_mid.o = ray_mid.o[valid, :]
-    #     #ray_mid.d = ray_mid.d[valid, :]
-        
-    #     # Trace rays through each lens in the system
-    #     for lens in self.system[1:-1]:
-    #         valid_1, ray_mid = lens._trace(ray_mid)
-    #         #ray_mid.o = ray_mid.o[valid_1, :]
-    #         #ray_mid.d = ray_mid.d[valid_1, :]
-    #         ray_mid = lens.mts_Rt.transform_ray(ray_mid)
-    #         valid = valid & valid_1
-        
-    #     # Trace rays to the first lens
-    #     valid_last, ray_last = self.system[0]._trace(ray_mid)
-    #     valid = valid & valid_last
-    #     ray_last = self.system[0].mts_Rt.transform_ray(ray_last)
-        
-    #     # Intersect rays with the screen
-    #     uv, valid_screen = screen.intersect(ray_last)[1:]
-    #     # Apply mask to filter out invalid rays
-    #     mask = valid & valid_screen
-        
-    #     return uv, mask
-
-    def render_single_back_save_pos(self, wavelength, screen, aperture_reduction = 0.05):
+    def render_single_back_save_pos(self, wavelength, screen, numerical_aperture = 0.05):
         """
         Renders back propagation of single ray through a series of lenses onto a screen. Used to save the positions of the resulting rays.
 
         Args:
             wavelength (float): The wavelength of the light.
             screen (object): The screen object onto which the light is projected.
+            numerical_aperture (float, optional): The numerical aperture of the system. Defaults to 0.05.
 
         Returns:
             tuple: A tuple containing the rays positions (uv) and the mask indicating valid pixels on the screen.
         """
         # Sample rays from the sensor
-        ####valid, ray_mid = self.system[-1].sample_ray_sensor(wavelength.item(), aperture_reduction = aperture_reduction)
-        valid, ray_mid = self.system[0].sample_ray_sensor(wavelength.item(), aperture_reduction = aperture_reduction)
+        ####valid, ray_mid = self.system[-1].sample_ray_sensor(wavelength.item(), numerical_aperture = numerical_aperture)
+        valid, ray_mid = self.system[0].sample_ray_sensor(wavelength.item(), numerical_aperture = numerical_aperture)
         # ray_mid.o = ray_mid.o[valid, :]
         # ray_mid.d = ray_mid.d[valid, :]
         # print("Ray 1: ", ray_mid)
@@ -546,7 +552,7 @@ class HSSystem:
 
         return uv, mask
     
-    def save_pos_render(self, texture = None, nb_rays=20, wavelengths = [656.2725, 587.5618, 486.1327], z0=0, offsets=None, aperture_reduction = 1):
+    def save_pos_render(self, texture = None, nb_rays=20, wavelengths = [656.2725, 587.5618, 486.1327], z0=0, offsets=None, numerical_aperture = 0.05):
         """
         Renders a dummy image to save the positions of rays passing through the optical system.
         Args:
@@ -555,7 +561,7 @@ class HSSystem:
             wavelengths (list, optional): The wavelengths of the rays to be rendered. Defaults to [656.2725, 587.5618, 486.1327].
             z0 (int, optional): The z-coordinate of the screen. Defaults to 0.
             offsets (list, optional): The offsets for each lens in the system. Defaults to None.
-            aperture_reduction (int, optional): The reduction factor for the aperture. Defaults to 1.
+            numerical_aperture (int, optional): The reduction factor for the aperture. Defaults to 0.05.
         Returns:
             tuple: A tuple containing the positions of the rays (big_uv) and the corresponding mask (big_mask).
         """            
@@ -606,7 +612,7 @@ class HSSystem:
         for wavelength_id, wavelength in enumerate(wavelengths):
             # multi-pass rendering by sampling the aperture
             for i in tqdm(range(ray_counts_per_pixel)):
-                uv, mask = self.render_single_back_save_pos(wavelength, screen, aperture_reduction=aperture_reduction)
+                uv, mask = self.render_single_back_save_pos(wavelength, screen, numerical_aperture=numerical_aperture)
                 big_uv[wavelength_id, i, :, :] = uv
                 big_mask[wavelength_id, i, :] = mask
 
@@ -728,8 +734,6 @@ class HSSystem:
             nb_rays (int, optional): Number of rays. Defaults to 20.
             wavelengths (list, optional): List of wavelengths. Defaults to [656.2725, 587.5618, 486.1327].
             z0 (int, optional): Z-coordinate. Defaults to 0.
-            save (bool, optional): Whether to save the rendered image. Defaults to False.
-            plot (bool, optional): Whether to plot the rendered image. Defaults to False.
 
         Returns:
             ndarray: Rendered image.
@@ -793,8 +797,6 @@ class HSSystem:
             nb_rays (int, optional): Number of rays. Defaults to 20.
             wavelengths (list, optional): List of wavelengths. Defaults to [656.2725, 587.5618, 486.1327].
             z0 (int, optional): Z-coordinate. Defaults to 0.
-            save (bool, optional): Whether to save the rendered image. Defaults to False.
-            plot (bool, optional): Whether to plot the rendered image. Defaults to False.
 
         Returns:
             ndarray: Rendered image.
@@ -821,8 +823,11 @@ class HSSystem:
         screen.update_texture_all(texture_torch.permute(0, 3, 1, 2))
 
         # multi-pass rendering by sampling the aperture
-        I = screen.shading_all(big_uv, big_mask) # [batchsize, nC, nb_rays, N]
-        I = I.sum(dim=2) # [batchsize, nC, N]
+        nb_cut = 4
+        I = 0
+        for cut in range(nb_cut):
+            Imid = screen.shading_all(big_uv[:, big_uv.shape[1]//nb_cut*cut:big_uv.shape[1]//nb_cut*(cut+1), :, :], big_mask[:, big_uv.shape[1]//nb_cut*cut:big_uv.shape[1]//nb_cut*(cut+1), :]) # [batchsize, nC, nb_rays, N]
+            I = I + Imid.sum(dim=2) # [batchsize, nC, N]
         M = big_mask.sum(dim=1) # [nC, N]
         I = I / (M.unsqueeze(0) + 1e-10)
         # reshape data to a 2D image
@@ -838,7 +843,7 @@ class HSSystem:
         return I_rendered
     
     def propagate(self, texture = None, nb_rays=20, wavelengths = [656.2725, 587.5618, 486.1327], z0=0, offsets=None,
-                aperture_reduction = 1, save=False, plot = False):
+                numerical_aperture = 0.05, save=False, plot = False):
         """
         Perform ray tracing simulation for propagating light through the lens system. Renders the texture on a screen
 
@@ -848,6 +853,9 @@ class HSSystem:
             wavelengths (list, optional): List of wavelengths to be simulated. Defaults to [656.2725, 587.5618, 486.1327] (RGB).
             z0 (float, optional): Initial z-coordinate of the screen. Defaults to 0.
             offsets (list, optional): List of offsets for each lens in the system. Defaults to None.
+            numerical_aperture (float, optional): Numerical aperture of the system. Defaults to 0.05.
+            save (bool, optional): Whether to save the rendered image. Defaults to False.
+            plot (bool, optional): Whether to plot the rendered image. Defaults to False.
 
         Returns:
             I_rendered (ndarray): The rendered image.
@@ -919,7 +927,7 @@ class HSSystem:
             I = 0
             M = 0
             for i in tqdm(range(ray_counts_per_pixel)):
-                I_current, mask = self.render_single_back(wavelength, screen, aperture_reduction=aperture_reduction)
+                I_current, mask = self.render_single_back(wavelength, screen, numerical_aperture=numerical_aperture)
                 I = I + I_current
                 M = M + mask
             I = I / (M + 1e-10)
@@ -936,7 +944,7 @@ class HSSystem:
             Is.append(I.cpu())
         # show image
         I_rendered = torch.stack(Is, axis=-1)
-        I_rendered_plot = I_rendered.detach().cpu().flip(0).numpy()#.astype(np.uint8)
+        I_rendered_plot = I_rendered.detach().cpu().numpy()#.flip(0)#.astype(np.uint8)
         print(f"Elapsed rendering time: {time.time()-time_start:.3f}s")
         if plot and (nb_wavelengths==3):
             plt.imshow(np.flip(I_rendered_plot/I_rendered_plot.max(axis=(0,1))[np.newaxis, np.newaxis, :], axis=2))
@@ -965,7 +973,7 @@ class HSSystem:
 
     def sample_rays_pos(self, wavelength, angles, x_pos, y_pos, z_pos, d = None):
         """
-        Samples rays with given wavelength, angles, and positions.
+        Samples rays with given wavelength, angles, and positions or direction. Giving the direction instead of the angles is the preferred method.
 
         Args:
             wavelength (float): The wavelength of the rays.
@@ -973,6 +981,7 @@ class HSSystem:
             x_pos (float): The x-coordinate of the position.
             y_pos (float): The y-coordinate of the position.
             z_pos (float): The z-coordinate of the position.
+            d (ndarray, optional): The direction of the rays. Preferred method. Defaults to None.
 
         Returns:
             ray (do.Ray): A Ray object representing the sampled rays.
@@ -1140,9 +1149,7 @@ class HSSystem:
             size_pixel (float): The size of each pixel in the real grid.
             opposite (list, optional): Whether to compute the opposite of the spot diagram along the two dimensions. Defaults to [True, False].
             shift (list, optional): The shift to apply to the spot diagram along the two dimensions. Defaults to [0., 0.].
-            path_compare (str, optional): The path to the reference spot diagram model. Defaults to './'.
-            model (str, optional): The model to compare with. Defaults to 'simca'.
-            config_path (str, optional): The path to the configuration file. Defaults to './'.
+            wavelengths (list, optional): The wavelengths to compare. Defaults to [450., 550., 650.].
         """
 
         sq = int(np.sqrt(nb_pixels))
@@ -1203,6 +1210,8 @@ class HSSystem:
         """
         Plot the setup with a beam of rays.
 
+        Args:
+            radius (float, optional): The radius of the beam of rays. Defaults to None.
         Returns:
             ax (matplotlib.axes.Axes): The matplotlib axes object.
             fig (matplotlib.figure.Figure): The matplotlib figure object.
@@ -1218,6 +1227,11 @@ class HSSystem:
 
         Args:
             oss (list): A list of optical system records.
+            ax (matplotlib.axes.Axes, optional): The matplotlib axes object. Defaults to None.
+            fig (matplotlib.figure.Figure, optional): The matplotlib figure object. Defaults to None.
+            color (str, optional): The color of the rays. Defaults to 'b-'.
+            linewidth (float, optional): The width of the rays. Defaults to 1.0.
+            show (bool, optional): Whether to display the plot. Defaults to True.
 
         Returns:
             ax (matplotlib.axes.Axes): The matplotlib axes object.
@@ -1240,96 +1254,16 @@ class HSSystem:
         ax, fig = self.system[-1].plot_raytraces(oss[-1], ax=ax, fig=fig, color=color, linewidth=linewidth, show=show, with_sensor=True)
         
         return ax, fig
-    
-    def compare_spot(self, nb_pixels, size_pixel, opposite = [True, False], shift = [0., 0.], path_compare='./', model = 'simca', config_path = './'):
-        """
-        Compare the spot diagram of the lens system with a reference spot diagram.
 
-        Args:
-            nb_pixels (int): The number of pixels in the real grid. Has to be a square number.
-            size_pixel (float): The size of each pixel in the real grid.
-            opposite (list, optional): Whether to compute the opposite of the spot diagram along the two dimensions. Defaults to [True, False].
-            shift (list, optional): The shift to apply to the spot diagram along the two dimensions. Defaults to [0., 0.].
-            path_compare (str, optional): The path to the reference spot diagram model. Defaults to './'.
-            model (str, optional): The model to compare with. Defaults to 'simca'.
-            config_path (str, optional): The path to the configuration file. Defaults to './'.
-        """
-
-        sys.path.append(path_compare)
-        if model == 'simca':
-            from simca.CassiSystem_lightning import CassiSystemOptim
-
-        wavelengths = torch.tensor([450., 520., 650.])
-
-        sq = int(np.sqrt(nb_pixels))
-
-        for w in wavelengths:
-            plt.figure()
-            ps = self.plot_spot_diagram(w, nb_pixels, size_pixel, show=False)
-
-            #print(ps[...,0].shape)
-            #print(ps[...,0][::sq].shape)
-
-            ps = ps[sq-1::sq,:]
-            new_ps = np.zeros((ps.shape[0]//sq, 2))
-
-            for i in range(sq):
-                new_ps[i*sq:(i+1)*sq,:] = np.flip(ps[nb_pixels*i:nb_pixels*i+sq,:], axis=0)
-            ps = new_ps
-
-            if opposite[0]:
-                ps[..., 0] = - ps[..., 0]
-            if opposite[1]:
-                ps[..., 1] = - ps[..., 1]
-            ps[..., 0] += shift[0]
-            ps[..., 1] += shift[1]
-
-            np.save(self.save_dir + f'grid_do_{w}.npy', ps)
-            plt.scatter(ps[...,0], ps[...,1], color='b')
-
-            if model == 'simca':
-                config_system = ""
-                with open(config_path, "r") as file:
-                    config_system = yaml.safe_load(file)
-                cassi_system = CassiSystemOptim(system_config=config_system)
-
-                prop_x, prop_y = cassi_system.propagate_coded_aperture_grid()
-                if w == 450.:
-                    i = 0
-                elif w == 550.:
-                    i=1
-                elif w == 650.:
-                    i=2
-                prop_x_ref = prop_x[0,::sq,::sq,i].detach().numpy().flatten()/1000
-                prop_y_ref = prop_y[0,::sq,::sq,i].detach().numpy().flatten()/1000
-                prop_ref = np.stack((prop_x_ref, prop_y_ref), axis=-1)
-
-                np.save(self.save_dir + f'grid_simca_{w}.npy', prop_ref)
-            elif model == 'zemax':
-                file_path = path_compare + f'grid_distorsions_{int(w)}nm.txt'
-                _, _, _, x_real, y_real = parse_grid_distortion_data(file_path)
-                prop_x_ref = x_real.flatten()
-                prop_y_ref = y_real.flatten()
-                prop_ref = np.stack((prop_x_ref, prop_y_ref), axis=-1)
-                
-
-            plt.scatter(prop_x_ref, prop_y_ref, color='r')
-            plt.title('Spot diagram at ' + str(w) + 'nm')
-            plt.xlabel('x [mm]')
-            plt.ylabel('y [mm]')
-            plt.legend(['dO', model])
-            print(f"Average distance at {str(w)} nm: {np.mean(np.linalg.norm(ps - prop_ref, axis=-1)):.4f}mm")
-
-        plt.show()
-
-    def compare_spot_zemax(self, opposite = [True, False], shift = [0., 0.], path_compare='./'):
+    def compare_spot_zemax(self, path_compare='./'):
         """
         Compare the spot diagram of the lens system with a reference spot diagram.
 
         Args:
             path_compare (str, optional): The path to the reference spot diagram model. Defaults to './'.
-            model (str, optional): The model to compare with. Defaults to 'simca'.
-            config_path (str, optional): The path to the configuration file. Defaults to './'.
+        
+        Returns:
+            torch.Tensor: The mean difference between the spot of the system and of Zemax for the system's wavelengths.
         """
         plt.rcParams['text.usetex'] = True
         plt.rcParams['font.family'] = 'serif'
@@ -1434,6 +1368,16 @@ class HSSystem:
         return mean_diff
 
     def get_mapping_scene_detector(self, wavelengths, shape_scene = [512, 512]):
+        """
+        Create the mapping cube from the scene to the detector for a given set of wavelengths.
+
+        Args:
+            wavelengths (list): The wavelengths to consider.
+            shape_scene (list, optional): The shape of the scene. Defaults to [512, 512].
+        
+        Returns:
+            torch.Tensor: The mapping cube from the scene to the detector.
+        """
         x_field = np.linspace(-1/2, 1/2, shape_scene[0])*shape_scene[0]*self.system[-1].pixel_size
         y_field = np.linspace(-1/2, 1/2, shape_scene[1])*shape_scene[1]*self.system[-1].pixel_size
 
@@ -1449,7 +1393,6 @@ class HSSystem:
         mapping_cube = torch.zeros((shape_scene[0], shape_scene[1], len(wavelengths), 2), device=self.device, dtype=torch.int)
 
         film_size = torch.tensor(self.system[-1].film_size, device=self.device)
-        print("Film size: ", film_size)
         for w_id, w in enumerate(wavelengths):
             ray = do.Ray(o, d, w, device=self.device)
             for i, lens in enumerate(self.system[:-1]):
@@ -1458,10 +1401,50 @@ class HSSystem:
             ps = (ps[:, :2]/self.system[-1].pixel_size + film_size[None, :]//2).flip(1).reshape(shape_scene[0], shape_scene[1], 2) # Flip because x, y -> column, line
             ps = torch.stack((torch.clamp(ps[..., 0], min=0, max=self.system[-1].film_size[1]-1), torch.clamp(ps[..., 1], min=0, max=self.system[-1].film_size[0]-1)), dim=-1)
             mapping_cube[:, :, w_id, :] = ps.int()
+
+        return mapping_cube
+    
+    def create_simple_mapping(self, wavelengths, shape_scene = [512, 512], remove_y = False):
+        """
+        Create a simplified mapping from the scene to the detector for a given set of wavelengths, without taking into account the potential distortions.
+
+        Args:
+            wavelengths (list): The wavelengths to consider.
+            shape_scene (list, optional): The shape of the scene. Defaults to [512, 512].
+            remove_y (bool, optional): Whether to remove the y-coordinate spectral spreading. Defaults to False.
         
+        Returns:
+            torch.Tensor: The mapping cube from the scene to the detector.
+        """
+        x_field = np.linspace(-1/2, 1/2, shape_scene[0])*shape_scene[0]*self.system[-1].pixel_size
+        y_field = np.linspace(-1/2, 1/2, shape_scene[1])*shape_scene[1]*self.system[-1].pixel_size
+
+        x, y = np.meshgrid(x_field, y_field)
+        x = torch.from_numpy(x).float().to(self.device)
+        y = torch.from_numpy(y).float().to(self.device)
+
+        positions = torch.stack((x,y), axis=-1).reshape(-1, 2).float()
+
+        pos_dispersed = self.central_positions_wavelengths(torch.linspace(450, 650, 28))[0]
+
+        if remove_y:
+            pos_dispersed[:, 1] = 0.
+                        
+        mapping_cube = torch.zeros((shape_scene[0], shape_scene[1], len(wavelengths), 2), device=self.device, dtype=torch.int)
+
+        film_size = torch.tensor(self.system[-1].film_size, device=self.device)
+        for w_id, w in enumerate(wavelengths):
+            #ps = positions + pos_dispersed[-1-w_id, :].unsqueeze(0)
+            ps = positions - pos_dispersed[w_id, :].unsqueeze(0)
+            ps = (ps[:, :2]/self.system[-1].pixel_size + film_size[None, :]//2).flip(1).reshape(shape_scene[0], shape_scene[1], 2) # Flip because x, y -> column, line
+            ps = torch.stack((torch.clamp(ps[..., 0], min=0, max=self.system[-1].film_size[1]-1), torch.clamp(ps[..., 1], min=0, max=self.system[-1].film_size[0]-1)), dim=-1)
+            mapping_cube[:, :, w_id, :] = ps.int()
+        
+        mapping_cube[:,:,:, 0] = film_size[1]-1 - mapping_cube[:,:,:, 0]
+        mapping_cube[:,:,:, 1] = film_size[0]-1 - mapping_cube[:,:,:, 1]
         return mapping_cube
 
-    def render(self, wavelengths=[450., 550., 650.], nb_rays=1, z0=0, texture=None, offsets=None, aperture_reduction=1, plot=True):
+    def render(self, wavelengths=[450., 550., 650.], nb_rays=1, z0=0, texture=None, offsets=None, numerical_aperture = 0.05, plot=True):
         """
         Renders the texture with the optical system.
         Args:
@@ -1470,13 +1453,13 @@ class HSSystem:
             z0 (int, optional): Initial z-coordinate. Should be approximately equal to the distance from the sensor to the origin. Defaults to 0.
             texture (ndarray, optional): Texture array. Defaults to None.
             offsets (ndarray, optional): Offsets array. Defaults to None.
-            aperture_reduction (int, optional): Aperture reduction factor. Defaults to 1.
+            numerical_aperture (int, optional): Aperture reduction factor. Defaults to 1.
             plot (bool, optional): Whether to plot the rendered image. Defaults to True.
         """
 
         print(f"Texture shape: {texture.shape}")
         return self.propagate(wavelengths = wavelengths, nb_rays = nb_rays, z0 = z0,
-                  texture = texture, offsets = offsets, aperture_reduction=aperture_reduction, plot = plot)
+                  texture = texture, offsets = offsets, numerical_aperture=numerical_aperture, plot = plot)
     
     def central_positions_wavelengths(self, wavelengths):
         """
@@ -1556,6 +1539,7 @@ class HSSystem:
             max_angle (float): Maximum angle.
             wavelengths (list): List of wavelengths to compare.
             colors (list, optional): List of colors for each wavelength for plotting. Defaults to None.
+            linewidth (float, optional): Width of the rays. Defaults to 1.0.
         Returns:
             None
         """
@@ -1736,7 +1720,19 @@ class HSSystem:
             rms_zemax = torch.sqrt(torch.mean((ps_zemax- centroid_zemax)**2))*1000
 
 
-            def add_interval(ax, xdata, ydata, caps="  "):
+            def add_interval(ax, xdata, ydata, caps="||"):
+                """
+                Add an interval to the plot for size reference.
+
+                Args:
+                    ax (matplotlib.axes.Axes): The axes to add the interval to.
+                    xdata (list): The x-coordinates of the interval.
+                    ydata (list): The y-coordinates of the interval.
+                    caps (str, optional): The text to add at the ends of the interval. Defaults to "||".
+                
+                Returns:
+                    tuple: The line and the annotations.
+                """
                 line = ax.add_line(lines.Line2D(xdata, ydata, color='black', linewidth=3))
                 anno_args = {
                     'ha': 'center',
@@ -1798,6 +1794,21 @@ class HSSystem:
         plt.show()
 
     def fit_psf(self, nb_centric_circles, params, depth_list, angle_list, start_dist, pixel_size, kernel_size=11, show_psf=False):
+        """
+        Manually fit the PSF for a given set of parameters. Shows the rmse between the PSF and the Zemax PSF for each set of parameters.
+        Args:
+            nb_centric_circles (int): Number of circles in the hexapolar grid. Will define the number of rays.
+            params (list): List of parameters to compare. Each parameter is a tuple (source_pos, wavelength, ps_zemax).
+            depth_list (list): List of depths to test.
+            angle_list (list): List of angles to test.
+            start_dist (float): Starting distance.
+            pixel_size (float): Size of the pixels in the sensor.
+            kernel_size (int, optional): Size of the kernel for the histogram. Defaults to 11.
+            show_psf (bool, optional): Whether to show the PSF. Defaults to False.
+        
+        Returns:
+            torch.Tensor: The rmse between the PSF and the Zemax PSF for each set of parameters.
+        """
         results = torch.zeros(len(depth_list), len(angle_list))
         for i, depth in enumerate(tqdm(depth_list)):
             self.system[-1].d_sensor = depth + start_dist
@@ -2176,16 +2187,20 @@ def compute_centroid(points):
 
 def find_bins(points, size_bin, nb_bins=11, same_grid=False, centroid=None, absolute_grid = False,):
     """
-    Compute the bins for a given set of points.
+    Compute the bins for a given set of points. The bins can be computed independently or on a given grid
 
     Args:
         points (torch.Tensor): The input points.
         size_bin (float): The size of each bin.
         nb_bins (int, optional): The number of bins. Default is 11.
+        same_grid (bool, optional): Whether to use the same grid for all points. Default is False.
+        centroid (torch.Tensor, optional): The centroid of the points. Default is None.
+        absolute_grid (bool, optional): Whether to use an absolute grid, defined by the size and number of pixels. Default is False.
 
     Returns:
         bins_i (torch.Tensor): The bins along the x-axis.
         bins_j (torch.Tensor): The bins along the y-axis.
+        centroid (torch.Tensor): The centroid of the points.
     """
 
     if centroid is None:
@@ -2209,10 +2224,16 @@ def find_bins(points, size_bin, nb_bins=11, same_grid=False, centroid=None, abso
 
     return bins_i, bins_j, centroid
 
-def upsample_hyperspectral(hs_scene, factor):
-    return torch.nn.functional.interpolate(hs_scene, scale_factor=factor, mode='linear', align_corners=True)
-
 def extract_positions(file_path):
+    """
+    Extract the x and y positions of a PSF from Zemax from a file.
+
+    Args:
+        file_path (str): The path to the file.
+    
+    Returns:
+        tuple: The x and y positions.
+    """
     if '.h5' in file_path:
         # Open the H5 file
         with h5py.File(file_path, 'r') as h5f:
@@ -2244,6 +2265,15 @@ def extract_positions(file_path):
 import re
 
 def parse_grid_distortion_data(file_path):
+    """
+    Parse the spot diagram of a grid from a system in Zemax from a file.
+
+    Args:
+        file_path (str): The path to the file.
+    
+    Returns:
+        tuple: The data, the x-field (input), y-field, x-real (output), y-real
+    """
     with open(file_path, 'r', encoding='utf-16') as file:
         lines = file.readlines()
 
