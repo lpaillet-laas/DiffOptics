@@ -175,8 +175,8 @@ if __name__ == '__main__':
     # - 'optimize_adam_psf_zemax': Automatically optimize the distance of the sensor and the angle of the system to match Zemax system
     # - 'optimize_psf_zemax': Manually optimize the distance of the sensor and the angle of the system to match Zemax system.
     # - 'compare_psf_zemax': Compare the PSF of the system with Zemax.
-    
-    usecase = 'compare_psf_zemax'
+
+    usecase = 'spot'
 
 
     oversample = 1
@@ -231,8 +231,8 @@ if __name__ == '__main__':
         """
         Plot the spot diagram for the lens group.
         """
-        wavelengths = torch.tensor([450, 550, 650])
-        lens_group.plot_spot_less_points(400, 20*1e-3, wavelengths = wavelengths)
+        wavelengths = torch.tensor([450, 520, 650])
+        lens_group.plot_spot_less_points(9, 10*1e-3, wavelengths = wavelengths)
 
     elif usecase == 'render_mapping':
         """

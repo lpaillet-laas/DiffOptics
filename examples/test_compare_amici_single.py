@@ -12,7 +12,7 @@ import time
 import yaml
 
 import cProfile
-from main_class import *
+from examples.CASSI_class import *
 from matplotlib import cm
 
 # Load the configuration file
@@ -44,23 +44,6 @@ plt.legend()
 ax.set_xlabel("Wavelength [nm]", fontsize=90/2.5)
 ax.set_ylabel('Spreading [µm]', fontsize=90/2.5)
 ax.tick_params(axis='both', which='major', labelsize=90/2.5, width=5/2.5, length=20/2.5)
+plt.grid("on")
 plt.savefig("/home/lpaillet/Documents/Codes/DiffOptics/system_comparison_with_zemax/" + "spreading_curves_amici_single.svg", format='svg', bbox_inches = 'tight', pad_inches = 0)
 plt.show()
-
-
-
-
-
-
-print(1000*(disp_amici[0] - disp_amici[-1]))
-print(1000*(disp_single[0] - disp_single[-1]))
-
-print(single_system.central_positions_wavelengths(torch.Tensor([450., 520., 650.]))[1][:,1])
-
-
-shift_value = torch.Tensor([-42.850,  0.00329,  38.452])
-shift_value -= torch.Tensor([-39.7427,   0.0780,  43.3486])
-
-I = 0
-wavelength_id = 0
-I = torch.roll(I, shifts=shift_value[wavelength_id].item(), dims=1)

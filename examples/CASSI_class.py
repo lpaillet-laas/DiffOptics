@@ -1106,7 +1106,7 @@ class HSSystem:
             plt.close()
         return ps[...,:2]
     
-    def plot_spot_diagram(self, wavelength, nb_pixels, size_pixel, normalize=False, show=True):
+    def plot_spot_diagram(self, wavelength, nb_pixels, size_pixel, normalize=False, show=True, nb_pts_x=3, nb_pts_y=3):
         """
         Generates a spot diagram for the given set of lenses.
 
@@ -1129,18 +1129,29 @@ class HSSystem:
             indexing='xy' # ij in original code
         )
 
+        x, y = torch.meshgrid(
+            torch.linspace(-2.5, 2.5, nb_pts_x, device=self.device),
+            torch.linspace(-2.5, 2.5, nb_pts_y, device=self.device),
+            indexing = 'xy'
+        )
+
+        d = torch.zeros((1,1,3), device=self.device)
+        d[0,0,-1] = 1
+        d = d.repeat(x.shape[0], x.shape[1], 1)
+
         np.save(self.save_dir + "grid.npy", np.stack((x.cpu().detach().numpy().flatten(),y.cpu().detach().numpy().flatten()), axis=-1))
 
         o = torch.stack((x,y,torch.zeros_like(x, device=self.device)), axis=2)
         ray.o = o
+        ray.d = d
         for i, lens in enumerate(self.system[:-1]):
             ray, valid = lens.trace(ray)
         ps = self.system[-1].trace_to_sensor(ray)
-        self.system[-1].spot_diagram(ps, xlims=[-nb_pixels*size_pixel/2*1.5, nb_pixels*size_pixel/2*1.5], ylims=[-nb_pixels*size_pixel/2*1.5, nb_pixels*size_pixel/2*1.5], savepath=self.save_dir + "spotdiagram.png", normalize=normalize, show=show)
+        #self.system[-1].spot_diagram(ps, xlims=[-nb_pixels*size_pixel/2*1.5, nb_pixels*size_pixel/2*1.5], ylims=[-nb_pixels*size_pixel/2*1.5, nb_pixels*size_pixel/2*1.5], savepath=self.save_dir + "spotdiagram.png", normalize=normalize, show=show)
         ps = ps.cpu().detach().numpy()
         return ps[...,:2]
     
-    def plot_spot_less_points(self, nb_pixels, size_pixel, opposite = [True, False], shift = [0., 0.], wavelengths = [450., 550., 650.]):
+    def plot_spot_less_points(self, nb_pixels, size_pixel, opposite = [False, False], shift = [0., 0.], wavelengths = [450., 550., 650.]):
         """
         Compare the spot diagram of the lens system with a reference spot diagram.
 
@@ -1153,19 +1164,19 @@ class HSSystem:
         """
 
         sq = int(np.sqrt(nb_pixels))
-        plt.figure()
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        plt.rcParams['text.usetex'] = True
+        plt.rcParams['font.family'] = 'serif'
         for w_id, w in enumerate(wavelengths):
-            ps = self.plot_spot_diagram(w, nb_pixels, size_pixel, show=False)
+            ps = self.plot_spot_diagram(w, nb_pixels, size_pixel, show=False, nb_pts_x=3, nb_pts_y=3)
 
-            #print(ps[...,0].shape)
-            #print(ps[...,0][::sq].shape)
-
-            ps = ps[sq-1::sq,:]
+            """ps = ps[sq-1::sq,:]
             new_ps = np.zeros((ps.shape[0]//sq, 2))
 
             for i in range(sq):
                 new_ps[i*sq:(i+1)*sq,:] = np.flip(ps[nb_pixels*i:nb_pixels*i+sq,:], axis=0)
-            ps = new_ps
+            ps = new_ps """
 
             if opposite[0]:
                 ps[..., 0] = - ps[..., 0]
@@ -1174,13 +1185,46 @@ class HSSystem:
             ps[..., 0] += shift[0]
             ps[..., 1] += shift[1]
 
+            ps = self.plot_spot_diagram(w, nb_pixels, size_pixel, show=False, nb_pts_x=20, nb_pts_y=3)
+
+            if w_id==0:
+                for i in range(3):
+                    plt.plot(ps[i*20:(i+1)*20,0], ps[i*20:(i+1)*20,1], color='b', label = '_nolegend_')
+            elif w_id==1:
+                for i in range(3):
+                    plt.plot(ps[i*20:(i+1)*20,0], ps[i*20:(i+1)*20,1], color='g', label = '_nolegend_')
+            elif w_id==2:
+                for i in range(3):
+                    plt.plot(ps[i*20:(i+1)*20,0], ps[i*20:(i+1)*20,1], color='r', label = '_nolegend_')
+            
+            ps = self.plot_spot_diagram(w, nb_pixels, size_pixel, show=False, nb_pts_x=3, nb_pts_y=20)
+            if w_id==0:
+                for i in range(3):
+                    plt.plot(ps[i::3,0], ps[i::3,1], color='b', label = '_nolegend_')
+            elif w_id==1:
+                for i in range(3):
+                    plt.plot(ps[i::3,0], ps[i::3,1], color='g', label = '_nolegend_')
+            elif w_id==2:
+                for i in range(3):
+                    plt.plot(ps[i::3,0], ps[i::3,1], color='r', label = '_nolegend_')
+        for w_id, w in enumerate(wavelengths):
+            ps = self.plot_spot_diagram(w, nb_pixels, size_pixel, show=False, nb_pts_x=3, nb_pts_y=3)
+
             if w_id==0:
                 plt.scatter(ps[...,0], ps[...,1], color='b')
             elif w_id==1:
                 plt.scatter(ps[...,0], ps[...,1], color='g')
             elif w_id==2:
                 plt.scatter(ps[...,0], ps[...,1], color='r')
+        
+        plt.xticks([-3, -2, -1, 0, 1, 2, 3])
+        plt.yticks([-2, -1, 0, 1, 2])
+        ax.tick_params(axis='both', which='major', width=5/2.5, length=20/2.5)
+        plt.grid(True)
+        plt.legend([f'{wavelengths[0]} nm', f'{wavelengths[1]} nm', f'{wavelengths[2]} nm'])
+        plt.savefig(self.save_dir + "spotdiagram.svg", format="svg", bbox_inches='tight', pad_inches = 0)
         plt.show()
+        
     
     def combined_plot_setup(self, with_sensor=False):
         """
@@ -1268,7 +1312,7 @@ class HSSystem:
         plt.rcParams['text.usetex'] = True
         plt.rcParams['font.family'] = 'serif'
         #params = {'text.latex.preamble': r'\usepackage{siunitx} \usepackage{sfmath} \sisetup{detect-family = true} \usepackage{amsmath}'}
-        params = {'axes.labelsize': 90/2.5,'axes.titlesize':90/2.5, 'legend.fontsize': 90/2.5, 'xtick.labelsize': 70/2.5, 'ytick.labelsize': 70/2.5}
+        params = {'axes.labelsize': 90*1.2/2.5,'axes.titlesize':90*1.2/2.5, 'legend.fontsize': 90*1.3/2.5, 'xtick.labelsize': 70*1.2/2.5, 'ytick.labelsize': 70*1.2/2.5}
         matplotlib.rcParams.update(params)
         plt.rcParams.update(params)
 
@@ -1340,6 +1384,7 @@ class HSSystem:
             vmax_zemax = 4.64173844285655
             plt.imshow(diff, extent=[x_field.min()*1000, x_field.max()*1000, y_field.min()*1000, y_field.max()*1000], vmin=vmin_zemax, vmax=vmax_zemax)
             cb = plt.colorbar(label=r'Distance [µm]')
+            #cb.set_ticks(np.round(np.arange(vmin_zemax, vmax_zemax, (vmax_zemax-vmin_zemax)/5.001),1))
             #plt.title(f'Distortion map with respect to Zemax at {w.int().item()}nm')
             ax.set_xlabel(r"x [µm]")
             ax.set_ylabel(r"y [µm]")
@@ -1355,6 +1400,8 @@ class HSSystem:
             
             plt.imshow(diff_field, extent=[x_field.min()*1000, x_field.max()*1000, y_field.min()*1000, y_field.max()*1000], vmin=list_diff_field.min(), vmax=list_diff_field.max())
             cb = plt.colorbar(label=r'Distance [µm]')
+            cb.set_ticks(np.round(np.arange(list_diff_field.min(), list_diff_field.max(), (list_diff_field.max()-list_diff_field.min())/5.001),1))
+            #cb.set_ticks([50, 100, 150, 200])
             #plt.title(f'Distortion map relative to the grid at {w.int().item()}nm')
             ax.set_xlabel(r"x [µm]")
             ax.set_ylabel(r"y [µm]")
