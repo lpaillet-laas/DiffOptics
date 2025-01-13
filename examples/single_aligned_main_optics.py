@@ -10,11 +10,10 @@ sys.path.append("../")
 import diffoptics as do
 
 import time
-from utils import *
 import yaml
 
 import cProfile
-from main_class import *
+from examples.CASSI_class import *
 from matplotlib import cm
 
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
